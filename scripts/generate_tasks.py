@@ -52,6 +52,10 @@ def analyze_versions(info, num_versions=5):
     """根据图片特点分析版本 - 英文 prompt"""
     versions = []
     product_name = info["product_name"]
+    # 将中文产品名转换为英文
+    product_name_en = product_name.replace("Pet Bed", "Pet Bed").replace("Pet", "Pet").replace("Bed", "Bed")
+    if product_name_en == product_name:
+        product_name_en = "Product"  # 如果没有中文就用默认
     images = info["product_images"]
 
     if not images:
@@ -132,13 +136,16 @@ Quality assurance showcase of {product_name}. Display certification badges. Show
     return versions
 
 
-def generate_task(version_info, product_name, project_dir):
+def generate_task(version_info, product_name, product_name_en, project_dir):
     """生成单个版本 JSON"""
     ref_files = version_info["ref_files"]
+    
+    # 使用英文名
+    display_name = product_name_en if product_name_en != "Product" else product_name
 
     task_data = {
         "project_id": f"PRODUCT-{version_info['direction']}",
-        "project_name": f"{product_name} - {version_info['name']}",
+        "project_name": f"{display_name} - {version_info['name']}",
         "project_type": "product",
         "video_structure": "single",
         "total_tasks": 1,
@@ -147,10 +154,10 @@ def generate_task(version_info, product_name, project_dir):
             "video_id": f"PRODUCT-{version_info['direction']}",
             "segment_index": 0,
             "prompt": version_info["prompt"],
-            "description": f"{product_name} {version_info['name']} 15s",
+            "description": f"{display_name} {version_info['name']} 15s",
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
-                "referenceMode": "全能参考",
+                "referenceMode": "reference",
                 "aspectRatio": "9:16",
                 "duration": "15s"
             },
@@ -158,7 +165,7 @@ def generate_task(version_info, product_name, project_dir):
             "videoReferences": [],
             "realSubmit": True,
             "priority": 1,
-            "tags": [product_name, version_info["name"], "Product"],
+            "tags": [display_name, version_info["name"], "Product"],
             "dependsOn": []
         }]
     }
@@ -187,10 +194,16 @@ def main():
     info = parse_zai_report(project_dir)
     print(f"📦 产品: {info['product_name']}")
 
+    # 转换为英文名
+    product_name_en = info['product_name'].replace("Pet Bed", "Pet Bed").replace("Pet", "Pet").replace("Bed", "Bed")
+    if product_name_en == info['product_name']:
+        product_name_en = "Product"
+    print(f"📦 英文名: {product_name_en}")
+
     versions = analyze_versions(info, num_versions)
 
     for v in versions:
-        task = generate_task(v, info['product_name'], project_dir)
+        task = generate_task(v, info['product_name'], product_name_en, project_dir)
         filename = f"seedance_tasks_{v['direction']}.json"
         with open(os.path.join(project_dir, filename), "w", encoding="utf-8") as f:
             json.dump(task, f, indent=2, ensure_ascii=False)
