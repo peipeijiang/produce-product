@@ -157,7 +157,7 @@ def generate_task(version_info, product_name, product_name_en, project_dir):
             "description": f"{display_name} {version_info['name']} 15s",
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
-                "referenceMode": "reference",
+                "referenceMode": "全能参考",
                 "aspectRatio": "9:16",
                 "duration": "15s"
             },
