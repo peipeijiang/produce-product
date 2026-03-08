@@ -3,6 +3,9 @@
 智能生成产品营销视频任务
 
 根据 ZAI 识别报告和图片特点，自动决定生成几个版本、什么风格
+
+注意：此脚本只生成 JSON 任务文件，不自动提交。
+如需提交，请使用 seedance_submit.py 或手动提交。
 """
 import json
 import os
@@ -45,8 +48,8 @@ def parse_zai_report(project_dir):
     return result
 
 
-def analyze_versions(info):
-    """根据图片特点分析版本"""
+def analyze_versions(info, num_versions=5):
+    """根据图片特点分析版本 - 英文 prompt"""
     versions = []
     product_name = info["product_name"]
     images = info["product_images"]
@@ -54,27 +57,28 @@ def analyze_versions(info):
     if not images:
         return versions
 
-    # V1: 奢华展示
-    ref_files = [f"keyframes/{images[0]}"]
-    if len(images) > 1:
-        ref_files.append(f"keyframes/{images[1]}")
-    if len(images) > 2:
-        ref_files.append(f"keyframes/{images[2]}")
+    # V1: Luxury Display
+    if num_versions >= 1:
+        ref_files = [f"keyframes/{images[0]}"]
+        if len(images) > 1:
+            ref_files.append(f"keyframes/{images[1]}")
+        if len(images) > 2:
+            ref_files.append(f"keyframes/{images[2]}")
 
-    prompt = f"""(@{images[0]}) is {product_name} product photo showing elegant design. """
-    if len(images) > 1:
-        prompt += f"(@{images[1]}) shows model wearing the product. "
-    if len(images) > 2:
-        prompt += f"(@{images[2]}) is pure product shot. "
+        prompt = f"""(@{images[0]}) is {product_name} product photo showing elegant design. """
+        if len(images) > 1:
+            prompt += f"(@{images[1]}) shows model wearing the product. "
+        if len(images) > 2:
+            prompt += f"(@{images[2]}) is pure product shot. "
 
-    prompt += f"""
+        prompt += f"""
 
-Elegant unboxing video of {product_name}. A premium box opens to reveal the sleek product. Close-up shots of premium finish. The product sparkles. Hand shows the product. Add English text overlays: '{product_name}', 'Premium Design'. CRITICAL: WRIST IS BARE if wearable. Cinematic 9:16, 15 seconds."""
+Elegant unboxing video of {product_name}. A premium box opens to reveal the sleek product. Close-up shots of premium finish. The product sparkles. Hand shows the product. Add text overlays: {product_name}, Premium Design. Cinematic 9:16, 15 seconds."""
 
-    versions.append({"name": "奢华展示", "direction": "Luxury", "ref_files": ref_files, "prompt": prompt})
+        versions.append({"name": "Luxury", "direction": "V1_Luxury", "ref_files": ref_files, "prompt": prompt})
 
-    # V2: 功能展示
-    if len(images) >= 2:
+    # V2: Features
+    if num_versions >= 2 and len(images) >= 2:
         ref_files2 = [f"keyframes/{images[0]}"]
         if len(images) > 1:
             ref_files2.append(f"keyframes/{images[1]}")
@@ -85,21 +89,45 @@ Elegant unboxing video of {product_name}. A premium box opens to reveal the slee
 
         prompt2 += f"""
 
-Dynamic feature showcase of {product_name}. Person interacts with the product. The feature displays. Person smiles. Cut to different scenarios. Add English text overlays: 'Smart Features', '{product_name}'. CRITICAL: WRIST IS BARE if wearable. Cinematic 9:16, 15 seconds."""
+Dynamic feature showcase of {product_name}. Person interacts with the product. The feature displays. Person smiles. Cut to different scenarios. Add text overlays: Smart Features, {product_name}. Cinematic 9:16, 15 seconds."""
 
-        versions.append({"name": "功能展示", "direction": "Features", "ref_files": ref_files2, "prompt": prompt2})
+        versions.append({"name": "Features", "direction": "V2_Features", "ref_files": ref_files2, "prompt": prompt2})
 
-    # V3: 生活方式
-    if len(images) >= 2:
+    # V3: Lifestyle
+    if num_versions >= 3 and len(images) >= 2:
         ref_files3 = [f"keyframes/{images[0]}"]
         if len(images) > 1:
             ref_files3.append(f"keyframes/{images[1]}")
 
-        prompt3 = f"""(@{images[0]}) is {product_name} in everyday life场景. (@{images[1]}) shows person using the product daily.
+        prompt3 = f"""(@{images[0]}) is {product_name} in everyday life. (@{images[1]}) shows person using the product daily.
 
-Lifestyle showcase of {product_name}. Person goes through their day with the product. Morning to evening. The product fits seamlessly. Add English text overlays: 'Your Daily Companion', '{product_name}'. CRITICAL: WRIST IS BARE if wearable. Cinematic 9:16, 15 seconds."""
+Lifestyle showcase of {product_name}. Person goes through their day with the product. Morning to evening. The product fits seamlessly. Add text overlays: Your Daily Companion, {product_name}. Cinematic 9:16, 15 seconds."""
 
-        versions.append({"name": "生活方式", "direction": "Lifestyle", "ref_files": ref_files3, "prompt": prompt3})
+        versions.append({"name": "Lifestyle", "direction": "V3_Lifestyle", "ref_files": ref_files3, "prompt": prompt3})
+
+    # V4: Cozy Scene (for pet products)
+    if num_versions >= 4 and len(images) >= 2:
+        ref_files4 = [f"keyframes/{images[0]}"]
+        if len(images) > 1:
+            ref_files4.append(f"keyframes/{images[1]}")
+
+        prompt4 = f"""(@{images[0]}) shows {product_name} with soft texture. (@{images[1]}) displays comfortable usage.
+
+Cozy showcase of {product_name}. Close-up of soft fabric surface. Gentle touch to show softness. Warm and peaceful atmosphere. Slow motion scenes. Add text overlays: Super Soft, Cloud Comfort, Sweet Dreams. Cinematic 9:16, 15 seconds."""
+
+        versions.append({"name": "Cozy", "direction": "V4_Cozy", "ref_files": ref_files4, "prompt": prompt4})
+
+    # V5: Quality Assurance
+    if num_versions >= 5 and len(images) >= 2:
+        ref_files5 = [f"keyframes/{images[0]}"]
+        if len(images) > 1:
+            ref_files5.append(f"keyframes/{images[1]}")
+
+        prompt5 = f"""(@{images[0]}) is {product_name} showing premium quality. (@{images[1]}) demonstrates material excellence.
+
+Quality assurance showcase of {product_name}. Display certification badges. Show premium materials. Durability demonstration. Customer satisfaction. Add text overlays: Premium Quality, Certified, Quality Guaranteed. Cinematic 9:16, 15 seconds."""
+
+        versions.append({"name": "Quality", "direction": "V5_Quality", "ref_files": ref_files5, "prompt": prompt5})
 
     return versions
 
@@ -138,26 +166,39 @@ def generate_task(version_info, product_name, project_dir):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 generate_tasks.py /path/to/project")
+    # 解析参数
+    num_versions = 5  # 默认生成 5 个版本
+    project_dir = None
+
+    for arg in sys.argv[1:]:
+        if arg.isdigit():
+            num_versions = int(arg)
+        elif not arg.startswith("-"):
+            project_dir = arg
+
+    if not project_dir:
+        print("用法: python3 generate_tasks.py /path/to/project [num_versions]")
+        print("       python3 generate_tasks.py /path/to/project 3  # 生成 3 个版本")
         sys.exit(1)
 
-    project_dir = sys.argv[1]
     print(f"📁 项目: {project_dir}")
+    print(f"📊 生成版本数: {num_versions}")
 
     info = parse_zai_report(project_dir)
-    print(f"📦 产品: {product_name}")
+    print(f"📦 产品: {info['product_name']}")
 
-    versions = analyze_versions(info)
+    versions = analyze_versions(info, num_versions)
 
     for v in versions:
         task = generate_task(v, info['product_name'], project_dir)
         filename = f"seedance_tasks_{v['direction']}.json"
-        with open(os.path.join(project_dir, filename), "w") as f:
-            json.dump(task, f, indent=2)
+        with open(os.path.join(project_dir, filename), "w", encoding="utf-8") as f:
+            json.dump(task, f, indent=2, ensure_ascii=False)
         print(f"✅ {filename}")
 
-    print("完成!")
+    print(f"\n完成! 生成了 {len(versions)} 个版本")
+    print("\n⚠️ 注意：JSON 文件仅供预览，如需提交请使用 seedance_submit.py")
+    print("   或手动提交（确保 prompt 无中文，referenceFiles 为 base64 格式）")
 
 
 if __name__ == "__main__":
