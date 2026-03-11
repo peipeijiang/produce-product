@@ -1,19 +1,19 @@
 ---
 name: produce-product
 description: 产品营销视频制作。根据产品图片，智能设计营销视频版本。适用于电商展示、产品宣传。
-version: 2.2.0
+version: 2.3.0
 ---
 
 # 产品营销视频制作 (produce-product)
 
 ## 概述
 
-根据产品图片，智能分析并生成营销视频任务。支持多场景、多版本的自动化视频制作。
+根据产品图片，智能分析并生成营销视频任务。支持多版本自动化视频制作。
 
 ### 完整工作流程
 
 ```
-1. 环境准备 → 2. 场景设计 → 3. 生成任务 → 4. 转换 base64 → 5. 提交任务 → 6. 监控生成
+1. 环境准备 → 2. 生成任务 → 3. 转换 base64 → 4. 提交任务 → 5. 监控生成
 ```
 
 ---
@@ -58,7 +58,7 @@ bash start-chrome.sh &
 
 ## 使用方法
 
-### 方式一：快速开始（使用场景脚本）
+### 快速开始（推荐）
 
 #### 步骤 1：准备产品目录
 
@@ -68,74 +68,54 @@ projects/PV-002-戒指_product/
 ├── products/
 │   ├── *.jpg                  # 产品图片
 │   └── ZAI_full_analysis_report.md
-├── keyframes/                 # 参考图（自动创建）
-└── scenarios/                 # 场景描述（可选）
-    ├── v1-sleep-health.md
-    ├── v2-fitness-athlete.md
-    ├── v3-gesture-control.md
-    ├── v4-health-tracker.md
-    └── v5-waterproof-life.md
+└── keyframes/                 # 参考图（自动创建）
 ```
 
-#### 步骤 2：准备场景脚本
+**重要：**
+- 产品图片放在 `products/` 目录
+- 脚本会自动复制到 `keyframes/` 目录（如果不存在）
 
-为每个使用场景创建 Markdown 文件（可选，但推荐）：
-
-```markdown
-# Scenario 1: Sleep Health Monitoring
-
-## Video Config
-- **Duration**: 10s
-- **Aspect Ratio**: 9:16
-- **Model**: Seedance 2.0 Fast
-- **Language**: English
-
-## Scene Breakdown
-- Scene 1 (0-3s): [描述]
-- Scene 2 (3-7s): [描述]
-- Scene 3 (7-10s): [描述]
-
-## Voiceover Script
-"完整的英文口播脚本..."
-
-## Subtitles
-```
-字幕文本1
-字幕文本2
-```
-
-## Reference Images
-- image1.jpg (场景描述)
-- image2.jpg (场景描述)
-- image3.jpg (场景描述)
-```
-
-#### 步骤 3：生成任务 JSON
-
-**方法 A：使用通用脚本（推荐）**
+#### 步骤 2：生成任务 JSON
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
 
-# 使用场景脚本生成任务
-python3 generate_ring_scenarios_fixed.py
+# 生成 5 个版本（默认）
+python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product
+
+# 生成 3 个版本
+python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product 3
 ```
 
-这会生成 5 个场景的任务 JSON：
-- `seedance_tasks_V1_SLEEP.json`
-- `seedance_tasks_V2_FITNESS.json`
-- `seedance_tasks_V3_GESTURE.json`
-- `seedance_tasks_V4_HEALTH.json`
-- `seedance_tasks_V5_WATERPROOF.json`
+**自动生成的内容：**
 
-**方法 B：使用通用脚本**
+脚本会自动：
+1. 解析 ZAI 报告（如果存在）
+2. 翻译产品名称为英文
+3. 选择不同的营销角度：
+   - **V1_Premium_Luxury** - 奢华品质
+   - **V2_Smart_Features** - 智能功能
+   - **V3_Lifestyle_Daily** - 日常生活
+   - **V4_Performance_Quality** - 性能质量
+   - **V5_Best_Value** - 最佳价值
 
-```bash
-# 生成 N 个版本
-python3 scripts/generate_tasks.py /path/to/project 5
+4. 每个版本按照 **Hook-Body-CTA 结构**生成 15s prompt：
+   - **Hook (0-3s)**: 吸引注意力
+   - **Body (3-12s)**: 展示功能和优势
+   - **CTA (12-15s)**: 行动号召
+
+5. 包含英文口播和字幕
+
+**生成的文件：**
+```
+seedance_tasks_V1_Premium_Luxury.json
+seedance_tasks_V2_Smart_Features.json
+seedance_tasks_V3_Lifestyle_Daily.json
+seedance_tasks_V4_Performance_Quality.json
+seedance_tasks_V5_Best_Value.json
 ```
 
-#### 步骤 4：转换为 base64 格式
+#### 步骤 3：转换为 base64 格式
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -144,7 +124,7 @@ python3 convert_to_base64_fixed.py
 
 这会将所有任务 JSON 中的 `referenceFiles` 从文件路径转换为 base64 编码格式。
 
-#### 步骤 5：提交任务到 Mock Server
+#### 步骤 4：提交任务到 Mock Server
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -152,11 +132,11 @@ python3 submit_tasks.py
 ```
 
 这会自动：
-- 读取所有 `seedance_tasks_V*.json` 文件
+- 读取所有 `seedance_tasks_*.json` 文件
 - 提交到 Mock Server API (`/api/tasks/push`)
 - 显示提交结果
 
-#### 步骤 6：监控生成状态
+#### 步骤 5：监控生成状态
 
 ```bash
 # 查看所有任务
@@ -184,7 +164,7 @@ for task in d['tasks'][-5:]:
 | 脚本 | 功能 |
 |------|------|
 | `start-chrome.sh` | 一键启动 Chrome + Seedance 扩展 |
-| `generate_ring_scenarios_fixed.py` | 根据场景脚本生成任务 JSON |
+| `scripts/generate_tasks.py` | 智能生成多版本任务 JSON（Hook-Body-CTA 结构）|
 | `convert_to_base64_fixed.py` | 转换 referenceFiles 为 base64 |
 | `submit_tasks.py` | 批量提交任务到 Mock Server |
 
@@ -222,23 +202,26 @@ for task in d['tasks'][-5:]:
 - 确保 `keyframes/` 目录中包含所有引用的图片
 - 使用 `ls keyframes/` 检查可用图片
 
-### 7. 确保场景描述完整
-- 每个场景应包含：场景分解、口播脚本、字幕、参考图片
-- Prompt 应明确要求英文口播和字幕
+### 7. Prompt 结构：Hook-Body-CTA
+- **Hook (0-3s)**: 吸引注意力，戏剧性开场
+- **Body (3-12s)**: 展示功能和优势，真实使用场景
+- **CTA (12-15s)**: 行动号召，强烈购买暗示
+- ✅ 每个版本 15 秒
+- ✅ 包含英文口播和字幕
 
 ---
 
 ## 完整示例
 
-### 示例：JELLY BELLES Smart Ring - 5 个场景视频
+### 示例：JELLY BELLES Smart Ring - 5 个版本视频
 
 ```bash
 # 1. 环境准备
 cd /Users/shane/.openclaw/workspace/skills/produce-product
 bash start-chrome.sh &
 
-# 2. 生成任务 JSON
-python3 generate_ring_scenarios_fixed.py
+# 2. 生成任务 JSON（5 个版本）
+python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product
 
 # 3. 转换为 base64
 python3 convert_to_base64_fixed.py
@@ -250,13 +233,36 @@ python3 submit_tasks.py
 curl -s http://localhost:3456/api/tasks | jq '.tasks[-5:]'
 ```
 
-**生成的 5 个场景：**
+**自动生成的 5 个营销角度：**
 
-1. **V1_SLEEP** - 睡眠健康监测（10 秒）
-2. **V2_FITNESS** - 健身运动员伴侣（10 秒）
-3. **V3_GESTURE** - 智能手势控制（10 秒）
-4. **V4_HEALTH** - 实时健康追踪（10 秒）
-5. **V5_WATERPROOF** - 防水生活（10 秒）
+1. **V1_Premium_Luxury** - 奢华品质（15 秒）
+2. **V2_Smart_Features** - 智能功能（15 秒）
+3. **V3_Lifestyle_Daily** - 日常生活（15 秒）
+4. **V4_Performance_Quality** - 性能质量（15 秒）
+5. **V5_Best_Value** - 最佳价值（15 秒）
+
+**每个视频都包含：**
+- ✅ Hook-Body-CTA 结构
+- ✅ 英文口播 (English voiceover)
+- ✅ 英文字幕 (English subtitles)
+- ✅ 9:16 竖屏格式
+- ✅ 15 秒时长
+
+---
+
+## 营销角度说明
+
+脚本会自动选择以下营销角度：
+
+| 版本 | 营销角度 | 重点 |
+|------|---------|------|
+| V1 | Premium Luxury | 高端品质、优雅设计 |
+| V2 | Smart Features | 智能功能、创新技术 |
+| V3 | Lifestyle Daily | 日常生活、无缝集成 |
+| V4 | Performance Quality | 性能表现、可靠性 |
+| V5 | Best Value | 性价比、超值优惠 |
+
+如果用户有具体场景指示，脚本会根据指示生成。如果没有指示，默认使用以上角度。
 
 ---
 
@@ -306,21 +312,32 @@ curl http://localhost:3456/ | jq '.sseClients'
 # 检查 keyframes 目录
 ls /path/to/project/keyframes/
 
-# 复制图片到 keyframes
-cp /path/to/source/*.jpg /path/to/project/keyframes/
+# 如果不存在，脚本会自动从 products/ 复制
+# 确保产品图片在 products/ 目录
+```
+
+### 问题 5：生成的版本不符合预期
+
+```bash
+# 重新生成指定数量的版本
+python3 scripts/generate_tasks.py /path/to/project 3  # 生成 3 个版本
 ```
 
 ---
 
 ## 更新日志
 
+### v2.3.0
+- **重大更新：移除场景脚本依赖**
+- 简化工作流程：直接根据产品图片生成任务
+- 自动按照 Hook-Body-CTA 结构生成 15s prompt
+- 自动选择 5 个不同营销角度
+- 删除场景相关脚本（generate_ring_scenarios.py）
+- 更新文档，移除场景脚本说明
+
 ### v2.2.0
 - 添加完整工作流程说明
-- 新增 `generate_ring_scenarios_fixed.py` 脚本
-- 新增 `convert_to_base64_fixed.py` 脚本
-- 新增 `submit_tasks.py` 脚本
-- 更新环境准备步骤
-- 添加场景脚本模板
+- 新增场景脚本模板（已废弃）
 
 ### v2.1.1
 - 添加重要规则说明（教训总结）

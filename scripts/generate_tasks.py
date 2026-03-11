@@ -2,15 +2,16 @@
 """
 智能生成产品营销视频任务
 
-根据 ZAI 识别报告和图片特点，自动决定生成几个版本、什么风格
+根据用户指示或产品图片，自动生成营销视频任务。
+如果没有具体场景指示，将自动按照 Hook-Body-CTA 结构生成 15s 英文口播带字幕的视频。
 
-注意：此脚本只生成 JSON 任务文件，不自动提交。
-如需提交，请使用 seedance_submit.py 或手动提交。
+使用方法：
+    python3 scripts/generate_tasks.py /path/to/project [num_versions]
 """
 import json
 import os
 import sys
-from pathlib import Path
+import random
 
 
 def parse_zai_report(project_dir):
@@ -20,11 +21,11 @@ def parse_zai_report(project_dir):
 
     result = {
         "product_name": "Product",
+        "product_name_en": "Product",
         "product_type": "Product",
         "colors": [],
         "features": [],
-        "product_images": [],
-        "feature_images": []
+        "product_images": []
     }
 
     if not os.path.exists(zai_report):
@@ -39,6 +40,20 @@ def parse_zai_report(project_dir):
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
 
+    # 简单的产品名翻译
+    cn_to_en = {
+        "智能戒指": "Smart Ring",
+        "智能手环": "Smart Band",
+        "智能手表": "Smart Watch",
+        "智能耳机": "Smart Earbuds",
+        "宠物床": "Pet Bed",
+        "智能音箱": "Smart Speaker"
+    }
+
+    product_name = result["product_name"]
+    result["product_name_en"] = cn_to_en.get(product_name, product_name)
+
+    # 获取产品图片
     keyframes_dir = os.path.join(project_dir, "keyframes")
     if os.path.exists(keyframes_dir):
         for f in os.listdir(keyframes_dir):
@@ -48,104 +63,105 @@ def parse_zai_report(project_dir):
     return result
 
 
+def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images, version_num):
+    """
+    生成 Hook-Body-CTA 结构的 15s Prompt
+
+    结构：
+    - Hook (0-3s): 吸引注意力
+    - Body (3-12s): 展示功能和优势
+    - CTA (12-15s): 行动号召
+    """
+
+    # 随机选择 3-5 张图片
+    selected_images = random.sample(images, min(len(images), random.randint(3, 5)))
+
+    # 构建 prompt
+    image_refs = " ".join([f"(@{img})" for img in selected_images])
+
+    prompt = f"""{image_refs}
+
+HOOK-Body-CTA structured marketing video for {product_name_en}.
+
+HOOK [0-3s]: Eye-catching opening. Product revealed dramatically. Text overlay: "Upgrade Your Life Today". Dynamic camera movement. Product sparkles. ({product_name_en}) takes center stage.
+
+BODY [3-12s]: Feature showcase: {feature}. Person using product in real-life scenario. Multiple angles showing design excellence. Smooth transitions between scenes. Text overlays appear dynamically: "Premium Quality", "Smart Design", "Daily Essential". Close-up shots highlight details. Product demonstrates its value through action.
+
+CTA [12-15s]: Strong call to action. Final dramatic shot of {product_name_en}. Text overlay: "Shop Now - Limited Time Offer". Urgent feeling. Product name displayed prominently. Link to purchase. Bold, confident ending.
+
+CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is {product_name_en}. Experience premium quality and smart design that fits perfectly into your life. Don't wait, transform your experience today. Shop now limited time offer." Include matching English subtitles. Cinematic style 9:16 15 seconds."""
+
+    return prompt, selected_images
+
+
 def analyze_versions(info, num_versions=5):
-    """根据图片特点分析版本 - 英文 prompt"""
+    """
+    根据图片特点自动生成多个版本
+
+    如果没有具体场景指示，自动选择不同的营销角度
+    """
     versions = []
     product_name = info["product_name"]
-    # 将中文产品名转换为英文
-    product_name_en = product_name.replace("Pet Bed", "Pet Bed").replace("Pet", "Pet").replace("Bed", "Bed")
-    if product_name_en == product_name:
-        product_name_en = "Product"  # 如果没有中文就用默认
+    product_name_en = info["product_name_en"]
     images = info["product_images"]
 
     if not images:
         return versions
 
-    # V1: Luxury Display
-    if num_versions >= 1:
-        ref_files = [f"keyframes/{images[0]}"]
-        if len(images) > 1:
-            ref_files.append(f"keyframes/{images[1]}")
-        if len(images) > 2:
-            ref_files.append(f"keyframes/{images[2]}")
+    # 不同的营销角度
+    marketing_angles = [
+        {
+            "name": "Premium_Luxury",
+            "feature": "premium craftsmanship and elegant design",
+            "description": "Premium Luxury 15s"
+        },
+        {
+            "name": "Smart_Features",
+            "feature": "innovative smart features",
+            "description": "Smart Features 15s"
+        },
+        {
+            "name": "Lifestyle_Daily",
+            "feature": "seamless daily integration",
+            "description": "Lifestyle Daily 15s"
+        },
+        {
+            "name": "Performance_Quality",
+            "feature": "exceptional performance and reliability",
+            "description": "Performance Quality 15s"
+        },
+        {
+            "name": "Best_Value",
+            "feature": "unbeatable value and benefits",
+            "description": "Best Value 15s"
+        }
+    ]
 
-        prompt = f"""(@{images[0]}) is {product_name} product photo showing elegant design. """
-        if len(images) > 1:
-            prompt += f"(@{images[1]}) shows model wearing the product. "
-        if len(images) > 2:
-            prompt += f"(@{images[2]}) is pure product shot. "
+    # 根据版本数生成
+    for i in range(min(num_versions, len(marketing_angles))):
+        angle = marketing_angles[i]
+        prompt, selected_images = generate_hook_body_cta_prompt(
+            product_name, product_name_en,
+            angle["feature"], images, i + 1
+        )
 
-        prompt += f"""
-
-Elegant unboxing video of {product_name}. A premium box opens to reveal the sleek product. Close-up shots of premium finish. The product sparkles. Hand shows the product. Add text overlays: {product_name}, Premium Design. Cinematic 9:16, 15 seconds."""
-
-        versions.append({"name": "Luxury", "direction": "V1_Luxury", "ref_files": ref_files, "prompt": prompt})
-
-    # V2: Features
-    if num_versions >= 2 and len(images) >= 2:
-        ref_files2 = [f"keyframes/{images[0]}"]
-        if len(images) > 1:
-            ref_files2.append(f"keyframes/{images[1]}")
-
-        prompt2 = f"""(@{images[0]}) is {product_name} showing product features. """
-        if len(images) > 1:
-            prompt2 += f"(@{images[1]}) demonstrates the feature. "
-
-        prompt2 += f"""
-
-Dynamic feature showcase of {product_name}. Person interacts with the product. The feature displays. Person smiles. Cut to different scenarios. Add text overlays: Smart Features, {product_name}. Cinematic 9:16, 15 seconds."""
-
-        versions.append({"name": "Features", "direction": "V2_Features", "ref_files": ref_files2, "prompt": prompt2})
-
-    # V3: Lifestyle
-    if num_versions >= 3 and len(images) >= 2:
-        ref_files3 = [f"keyframes/{images[0]}"]
-        if len(images) > 1:
-            ref_files3.append(f"keyframes/{images[1]}")
-
-        prompt3 = f"""(@{images[0]}) is {product_name} in everyday life. (@{images[1]}) shows person using the product daily.
-
-Lifestyle showcase of {product_name}. Person goes through their day with the product. Morning to evening. The product fits seamlessly. Add text overlays: Your Daily Companion, {product_name}. Cinematic 9:16, 15 seconds."""
-
-        versions.append({"name": "Lifestyle", "direction": "V3_Lifestyle", "ref_files": ref_files3, "prompt": prompt3})
-
-    # V4: Cozy Scene (for pet products)
-    if num_versions >= 4 and len(images) >= 2:
-        ref_files4 = [f"keyframes/{images[0]}"]
-        if len(images) > 1:
-            ref_files4.append(f"keyframes/{images[1]}")
-
-        prompt4 = f"""(@{images[0]}) shows {product_name} with soft texture. (@{images[1]}) displays comfortable usage.
-
-Cozy showcase of {product_name}. Close-up of soft fabric surface. Gentle touch to show softness. Warm and peaceful atmosphere. Slow motion scenes. Add text overlays: Super Soft, Cloud Comfort, Sweet Dreams. Cinematic 9:16, 15 seconds."""
-
-        versions.append({"name": "Cozy", "direction": "V4_Cozy", "ref_files": ref_files4, "prompt": prompt4})
-
-    # V5: Quality Assurance
-    if num_versions >= 5 and len(images) >= 2:
-        ref_files5 = [f"keyframes/{images[0]}"]
-        if len(images) > 1:
-            ref_files5.append(f"keyframes/{images[1]}")
-
-        prompt5 = f"""(@{images[0]}) is {product_name} showing premium quality. (@{images[1]}) demonstrates material excellence.
-
-Quality assurance showcase of {product_name}. Display certification badges. Show premium materials. Durability demonstration. Customer satisfaction. Add text overlays: Premium Quality, Certified, Quality Guaranteed. Cinematic 9:16, 15 seconds."""
-
-        versions.append({"name": "Quality", "direction": "V5_Quality", "ref_files": ref_files5, "prompt": prompt5})
+        versions.append({
+            "name": angle["description"],
+            "direction": f"V{i+1}_{angle['name']}",
+            "ref_files": [f"keyframes/{img}" for img in selected_images],
+            "prompt": prompt
+        })
 
     return versions
 
 
-def generate_task(version_info, product_name, product_name_en, project_dir):
+def generate_task(version_info, product_name_en, project_dir):
     """生成单个版本 JSON"""
     ref_files = version_info["ref_files"]
-    
-    # 使用英文名
-    display_name = product_name_en if product_name_en != "Product" else product_name
 
     task_data = {
         "project_id": f"PRODUCT-{version_info['direction']}",
-        "project_name": f"{display_name} - {version_info['name']}",
+        "project_name": f"{product_name_en} - {version_info['name']}",
         "project_type": "product",
         "video_structure": "single",
         "total_tasks": 1,
@@ -154,7 +170,7 @@ def generate_task(version_info, product_name, product_name_en, project_dir):
             "video_id": f"PRODUCT-{version_info['direction']}",
             "segment_index": 0,
             "prompt": version_info["prompt"],
-            "description": f"{display_name} {version_info['name']} 15s",
+            "description": version_info["name"],
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
                 "referenceMode": "全能参考",
@@ -165,7 +181,7 @@ def generate_task(version_info, product_name, product_name_en, project_dir):
             "videoReferences": [],
             "realSubmit": True,
             "priority": 1,
-            "tags": [display_name, version_info["name"], "Product"],
+            "tags": ["PRODUCT", product_name_en.replace(" ", "_"), version_info['name'].replace(" ", "_"), "VOICEOVER", "SUBTITLE"],
             "dependsOn": []
         }]
     }
@@ -192,26 +208,32 @@ def main():
     print(f"📊 生成版本数: {num_versions}")
 
     info = parse_zai_report(project_dir)
-    print(f"📦 产品: {info['product_name']}")
+    print(f"📦 产品: {info['product_name']} ({info['product_name_en']})")
+    print(f"📸 可用图片: {len(info['product_images'])} 张")
 
-    # 转换为英文名
-    product_name_en = info['product_name'].replace("Pet Bed", "Pet Bed").replace("Pet", "Pet").replace("Bed", "Bed")
-    if product_name_en == info['product_name']:
-        product_name_en = "Product"
-    print(f"📦 英文名: {product_name_en}")
+    if not info['product_images']:
+        print("❌ 错误: 没有找到产品图片")
+        print("   请确保项目目录下有 keyframes/ 文件夹，且包含图片")
+        sys.exit(1)
 
     versions = analyze_versions(info, num_versions)
 
+    if not versions:
+        print("❌ 错误: 无法生成版本")
+        sys.exit(1)
+
     for v in versions:
-        task = generate_task(v, info['product_name'], product_name_en, project_dir)
+        task = generate_task(v, info['product_name_en'], project_dir)
         filename = f"seedance_tasks_{v['direction']}.json"
         with open(os.path.join(project_dir, filename), "w", encoding="utf-8") as f:
             json.dump(task, f, indent=2, ensure_ascii=False)
-        print(f"✅ {filename}")
+        print(f"✅ {filename} - {v['name']}")
 
-    print(f"\n完成! 生成了 {len(versions)} 个版本")
-    print("\n⚠️ 注意：JSON 文件仅供预览，如需提交请使用 seedance_submit.py")
-    print("   或手动提交（确保 prompt 无中文，referenceFiles 为 base64 格式）")
+    print(f"\n✅ 完成! 生成了 {len(versions)} 个版本")
+    print(f"📁 位置: {project_dir}")
+    print("\n下一步:")
+    print("   1. python3 convert_to_base64_fixed.py  # 转换为 base64 格式")
+    print("   2. python3 submit_tasks.py              # 提交任务")
 
 
 if __name__ == "__main__":
