@@ -1,7 +1,7 @@
 ---
 name: produce-product
 description: 产品营销视频制作。根据产品图片，智能设计营销视频版本。适用于电商展示、产品宣传。
-version: 2.3.0
+version: 2.4.0
 ---
 
 # 产品营销视频制作 (produce-product)
@@ -13,14 +13,14 @@ version: 2.3.0
 ### 完整工作流程
 
 ```
-1. 环境准备 → 2. 生成任务 → 3. 转换 base64 → 4. 提交任务 → 5. 监控生成
+1. 环境准备 → 2. ZAI 图片识别 → 3. 生成任务 → 4. 转换 base64 → 5. 提交任务 → 6. 监控生成
 ```
 
 ---
 
-## 环境准备
+## 步骤 1：环境准备
 
-### 1. 检查 Mock Server
+### 1.1 检查 Mock Server
 
 ```bash
 # 检查 Mock Server 是否运行
@@ -35,14 +35,14 @@ curl -s http://localhost:3456/
 }
 ```
 
-### 2. 启动 Mock Server
+### 1.2 启动 Mock Server
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product/Seedance2-Chrome-Extensions
 node mock-server.js &
 ```
 
-### 3. 启动 Chrome + 扩展（一键启动）
+### 1.3 启动 Chrome + 扩展（一键启动）
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -56,26 +56,103 @@ bash start-chrome.sh &
 
 ---
 
-## 使用方法
+## 步骤 2：ZAI 图片识别
 
-### 快速开始（推荐）
-
-#### 步骤 1：准备产品目录
+### 2.1 准备产品图片
 
 ```bash
 # 项目目录结构
 projects/PV-002-戒指_product/
 ├── products/
 │   ├── *.jpg                  # 产品图片
-│   └── ZAI_full_analysis_report.md
-└── keyframes/                 # 参考图（自动创建）
+│   └── ZAI_full_analysis_report.md  # ZAI 识别报告（自动生成）
+└── keyframes/                 # 参考图（后续自动创建）
 ```
 
 **重要：**
-- 产品图片放在 `products/` 目录
-- 脚本会自动复制到 `keyframes/` 目录（如果不存在）
+- 将产品图片放入 `products/` 目录
+- 支持格式：.jpg, .jpeg, .png
 
-#### 步骤 2：生成任务 JSON
+### 2.2 使用 ZAI 识别产品
+
+**方法 A：通过 MCP Server**
+
+如果已配置 ZAI MCP Server，可以使用：
+
+```bash
+# 调用 ZAI 识别
+mcp call zai-mcp-server__analyze_image --image /path/to/project/products/image.jpg
+```
+
+**方法 B：通过 OpenClaw 工具**
+
+使用 `image` 工具分析产品图片：
+
+```python
+from openclaw import image
+
+# 分析第一张图片
+result = image.analyze(
+    image="/path/to/project/products/image1.jpg",
+    prompt="分析这个产品，识别产品名称、类型、颜色、功能等"
+)
+
+# 生成识别报告
+with open("/path/to/project/products/ZAI_full_analysis_report.md", "w") as f:
+    f.write(result)
+```
+
+**方法 C：通过对话**
+
+发送产品图片到对话，并要求识别：
+
+```
+请识别这个产品，生成以下格式的分析报告：
+
+## 产品基本信息
+
+- 产品名称: [中文]
+- 产品类型: [中文]
+- 可选颜色: [列表]
+- 核心功能: [列表]
+
+## 图片分类汇总
+
+| 文件 | 类型 | 颜色 | 场景/用途 |
+|------|------|------|-----------|
+```
+
+然后将识别结果保存到 `products/ZAI_full_analysis_report.md`。
+
+### 2.3 ZAI 报告格式示例
+
+识别完成后，`ZAI_full_analysis_report.md` 应包含：
+
+```markdown
+# JELLY BELLES 智能戒指 - ZAI 图片识别报告
+
+## 产品基本信息
+
+- **产品名称**: JELLY BELLES 智能戒指
+- **产品类型**: 智能穿戴设备 - 智能戒指
+- **可选颜色**: 金色、黑色、银色 (3种配色)
+- **可选尺寸**: 8、9、10、11、12 (5种尺寸)
+- **电池续航**: 5-7天
+
+## 图片分类汇总
+
+| 文件 | 类型 | 颜色 | 场景/用途 |
+|------|------|------|-----------|
+| ring-01_part_01.jpg | 产品照片 | 黑/金 | 手部佩戴展示 |
+| ring-01_part_03.jpg | 产品照片 | 金/银/黑 | 三色产品静物 |
+| ring-01_part_15.jpg | 产品照片 | 金色 | 睡眠监测佩戴 |
+```
+
+---
+
+## 步骤 3：生成任务 JSON
+
+### 3.1 生成任务
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -87,7 +164,7 @@ python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main
 python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product 3
 ```
 
-**自动生成的内容：**
+### 3.2 自动生成的内容
 
 脚本会自动：
 1. 解析 ZAI 报告（如果存在）
@@ -106,7 +183,8 @@ python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main
 
 5. 包含英文口播和字幕
 
-**生成的文件：**
+### 3.3 生成的文件
+
 ```
 seedance_tasks_V1_Premium_Luxury.json
 seedance_tasks_V2_Smart_Features.json
@@ -115,7 +193,9 @@ seedance_tasks_V4_Performance_Quality.json
 seedance_tasks_V5_Best_Value.json
 ```
 
-#### 步骤 3：转换为 base64 格式
+---
+
+## 步骤 4：转换为 base64 格式
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -124,7 +204,9 @@ python3 convert_to_base64_fixed.py
 
 这会将所有任务 JSON 中的 `referenceFiles` 从文件路径转换为 base64 编码格式。
 
-#### 步骤 4：提交任务到 Mock Server
+---
+
+## 步骤 5：提交任务到 Mock Server
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
@@ -136,7 +218,9 @@ python3 submit_tasks.py
 - 提交到 Mock Server API (`/api/tasks/push`)
 - 显示提交结果
 
-#### 步骤 5：监控生成状态
+---
+
+## 步骤 6：监控生成状态
 
 ```bash
 # 查看所有任务
@@ -209,6 +293,11 @@ for task in d['tasks'][-5:]:
 - ✅ 每个版本 15 秒
 - ✅ 包含英文口播和字幕
 
+### 8. ZAI 识别是必需步骤
+- ✅ 在生成任务前必须先进行 ZAI 图片识别
+- ✅ 识别报告用于翻译产品名、选择营销角度
+- ✅ 如果没有 ZAI 报告，会使用默认信息
+
 ---
 
 ## 完整示例
@@ -220,16 +309,20 @@ for task in d['tasks'][-5:]:
 cd /Users/shane/.openclaw/workspace/skills/produce-product
 bash start-chrome.sh &
 
-# 2. 生成任务 JSON（5 个版本）
+# 2. ZAI 图片识别
+# 通过对话发送产品图片，要求识别
+# 识别结果保存到 products/ZAI_full_analysis_report.md
+
+# 3. 生成任务 JSON（5 个版本）
 python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product
 
-# 3. 转换为 base64
+# 4. 转换为 base64
 python3 convert_to_base64_fixed.py
 
-# 4. 提交任务
+# 5. 提交任务
 python3 submit_tasks.py
 
-# 5. 监控状态
+# 6. 监控状态
 curl -s http://localhost:3456/api/tasks | jq '.tasks[-5:]'
 ```
 
@@ -323,17 +416,34 @@ ls /path/to/project/keyframes/
 python3 scripts/generate_tasks.py /path/to/project 3  # 生成 3 个版本
 ```
 
+### 问题 6：ZAI 报告未生成
+
+```bash
+# 检查 products/ 目录
+ls /path/to/project/products/
+
+# 确保 ZAI 识别结果已保存
+cat /path/to/project/products/ZAI_full_analysis_report.md
+```
+
 ---
 
 ## 更新日志
 
+### v2.4.0
+- **修复：添加 ZAI 图片识别步骤**
+  - 在"环境准备"和"生成任务"之间插入"ZAI 图片识别"
+  - 完整工作流程：6 步
+  - 添加 ZAI 识别方法和示例
+  - 添加 ZAI 报告格式说明
+
 ### v2.3.0
 - **重大更新：移除场景脚本依赖**
-- 简化工作流程：直接根据产品图片生成任务
-- 自动按照 Hook-Body-CTA 结构生成 15s prompt
-- 自动选择 5 个不同营销角度
-- 删除场景相关脚本（generate_ring_scenarios.py）
-- 更新文档，移除场景脚本说明
+  - 简化工作流程：直接根据产品图片生成任务
+  - 自动按照 Hook-Body-CTA 结构生成 15s prompt
+  - 自动选择 5 个不同营销角度
+  - 删除场景相关脚本（generate_ring_scenarios.py）
+  - 更新文档，移除场景脚本说明
 
 ### v2.2.0
 - 添加完整工作流程说明
