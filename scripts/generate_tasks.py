@@ -175,7 +175,7 @@ def generate_task(version_info, product_name_en, project_dir):
                 "model": "Seedance 2.0 Fast",
                 "referenceMode": "全能参考",
                 "aspectRatio": "9:16",
-                "duration": "15s"
+                "duration": 15
             },
             "referenceFiles": ref_files,
             "videoReferences": [],

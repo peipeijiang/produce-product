@@ -1,7 +1,7 @@
 ---
 name: produce-product
 description: 产品营销视频制作。根据产品图片，智能设计营销视频版本。适用于电商展示、产品宣传。
-version: 2.4.0
+version: 2.5.0
 ---
 
 # 产品营销视频制作 (produce-product)
@@ -429,6 +429,12 @@ cat /path/to/project/products/ZAI_full_analysis_report.md
 ---
 
 ## 更新日志
+
+### v2.5.0
+- **修复：修正 duration 配置格式**
+  - 将 `duration` 从 "15s" 改为 15（纯数字）
+  - 即梦网站期望纯数字格式
+  - 确保视频时长正确显示为 15 秒
 
 ### v2.4.0
 - **修复：添加 ZAI 图片识别步骤**
