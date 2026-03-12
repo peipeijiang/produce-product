@@ -11,8 +11,9 @@
 
 如果 raw/ 文件夹存在且包含图片，生成的任务会：
 1. 从 raw/ 随机选择 3 张（或少于 3 张则全部）作为实拍参考
-2. 在 prompt 中明确要求还原实拍产品的质感
-3. 所有产品画面必须忠实还原实拍图片的材质、光线和表面质感
+2. 复制并重命名为英文文件名（避免 prompt 出现中文）
+3. 在 prompt 中明确要求还原实拍产品的质感
+4. 所有产品画面必须忠实还原实拍图片的材质、光线和表面质感
 
 使用方法：
     python3 scripts/generate_tasks.py /path/to/project [num_versions]
@@ -25,6 +26,35 @@ import json
 import os
 import sys
 import random
+import shutil
+
+
+def copy_and_rename_raw_images(raw_dir, project_dir):
+    """
+    复制 raw 文件夹中的图片并重命名为英文，避免 prompt 中出现中文
+
+    返回：(重命名后的英文文件名列表, 临时文件夹路径)
+    """
+    renamed_files = []
+    temp_raw_dir = os.path.join(project_dir, "temp_raw")
+
+    # 创建临时文件夹
+    if not os.path.exists(temp_raw_dir):
+        os.makedirs(temp_raw_dir)
+
+    # 复制并重命名所有 raw 图片
+    for i, filename in enumerate(sorted(os.listdir(raw_dir)), 1):
+        if filename.lower().endswith((".jpg", ".png", ".jpeg")):
+            src = os.path.join(raw_dir, filename)
+            new_filename = f"raw_photo_{i:03d}.jpg"
+            dst = os.path.join(temp_raw_dir, new_filename)
+
+            # 复制文件
+            shutil.copy2(src, dst)
+            renamed_files.append(new_filename)
+            print(f"   📁 Copied and renamed: {filename} -> {new_filename}")
+
+    return renamed_files, temp_raw_dir
 
 
 def parse_zai_report(project_dir):
@@ -50,7 +80,14 @@ def parse_zai_report(project_dir):
 
     for line in content.split("\n"):
         if "产品名称" in line and ":" in line:
-            result["product_name"] = line.split(":")[-1].strip()
+            raw_name = line.split(":")[-1].strip()
+            # 提取纯中文名（去掉英文括号）
+            import re
+            match = re.search(r'^(.*?)\s*\(', raw_name)
+            if match:
+                result["product_name"] = match.group(1).strip()
+            else:
+                result["product_name"] = raw_name
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
 
@@ -74,7 +111,7 @@ def parse_zai_report(project_dir):
             if f.endswith((".jpg", ".png", ".jpeg")):
                 result["product_images"].append(f)
 
-    # 获取 raw 文件夹中的实拍图片
+    # 获取 raw 文件夹中的实拍图片（使用原始文件名，后续会重命名）
     raw_dir = os.path.join(project_dir, "raw")
     if os.path.exists(raw_dir):
         for f in os.listdir(raw_dir):
@@ -84,9 +121,9 @@ def parse_zai_report(project_dir):
     return result
 
 
-def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images, raw_images, version_num):
+def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, version_num, temp_raw_dir):
     """
-    生成 Hook-Body-CTA 结构的 15s Prompt
+    生成 Hook-Body-CTA 结构的 15s Prompt（纯英文）
 
     结构：
     - Hook (0-3s): 吸引注意力
@@ -94,17 +131,19 @@ def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images
     - CTA (12-15s): 行动号召
 
     参数：
-        raw_images: raw 文件夹中的实拍图片列表（必须有质感还原要求）
+        product_name_en: 英文产品名（Prompt 中必须使用英文）
+        raw_images: raw 文件夹中的实拍图片列表（英文文件名）
         images: keyframes 文件夹中的参考图片列表
+        temp_raw_dir: 临时 raw 文件夹路径（用于引用）
     """
     # 从 raw 文件夹中选择图片（如果有）
     if raw_images:
         # 选择 3 张，如果少于 3 张则全部使用
         selected_raw_images = random.sample(raw_images, min(len(raw_images), 3))
-        print(f"   📸 使用 {len(selected_raw_images)} 张实拍图（来自 raw/）")
+        print(f"   📸 Using {len(selected_raw_images)} real photos (from raw/)")
     else:
         selected_raw_images = []
-        print(f"   ⚠️  raw 文件夹为空或不存在，仅使用 keyframes 图片")
+        print(f"   ⚠️  No raw images, using keyframes only")
 
     # 随机选择 3-5 张 keyframes 图片作为参考
     if images:
@@ -120,7 +159,7 @@ def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images
     quality_instruction = ""
     if selected_raw_images:
         quality_instruction = """
-CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate the texture, material quality, and lighting from the raw product images. The referenced keyframes show the same product design but prioritize capturing the authentic texture and material feel of the raw product photography. Pay special attention to:
+CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate texture, material quality, and lighting from raw product images. The referenced keyframes show the same product design but prioritize capturing the authentic texture and material feel of raw product photography. Pay special attention to:
 - Surface texture (matte, glossy, metallic, fabric grain, etc.)
 - Material quality and craftsmanship
 - Lighting and reflections that match real product appearance
@@ -143,7 +182,7 @@ CRITICAL: Include professional English voiceover throughout: "Ready to upgrade y
     return prompt, all_ref_images
 
 
-def analyze_versions(info, num_versions=5):
+def analyze_versions(info, num_versions=5, temp_raw_dir=None):
     """
     根据图片特点自动生成多个版本
 
@@ -151,6 +190,7 @@ def analyze_versions(info, num_versions=5):
 
     参数：
         info: 包含 product_images（keyframes）和 raw_images（实拍图）
+        temp_raw_dir: 临时 raw 文件夹路径（英文文件名）
     """
     versions = []
     product_name = info["product_name"]
@@ -194,16 +234,15 @@ def analyze_versions(info, num_versions=5):
     for i in range(min(num_versions, len(marketing_angles))):
         angle = marketing_angles[i]
         prompt, selected_images = generate_hook_body_cta_prompt(
-            product_name, product_name_en,
-            angle["feature"], images, raw_images, i + 1
+            product_name_en, angle["feature"], images, raw_images, i + 1, temp_raw_dir
         )
 
-        # 构建引用文件列表（raw/ 和 keyframes/ 都需要包含）
+        # 构建引用文件列表（temp_raw/ 和 keyframes/）
         ref_files = []
         for img in selected_images:
-            # 如果图片在 raw_images 列表中，使用 raw/ 路径
-            if img in raw_images:
-                ref_files.append(f"raw/{img}")
+            # 如果图片在 raw_images 列表中，使用 temp_raw/ 路径
+            if img.startswith("raw_photo_"):
+                ref_files.append(f"temp_raw/{img}")
             # 否则使用 keyframes/ 路径
             else:
                 ref_files.append(f"keyframes/{img}")
@@ -236,7 +275,7 @@ def generate_task(version_info, product_name_en, project_dir):
             "description": version_info["name"],
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
-                "referenceMode": "全能参考",
+                "referenceMode": "Comprehensive Reference",  # 英文：全能参考
                 "aspectRatio": "9:16",
                 "duration": 15
             },
@@ -263,27 +302,40 @@ def main():
             project_dir = arg
 
     if not project_dir:
-        print("用法: python3 generate_tasks.py /path/to/project [num_versions]")
-        print("       python3 generate_tasks.py /path/to/project 3  # 生成 3 个版本")
+        print("Usage: python3 generate_tasks.py /path/to/project [num_versions]")
+        print("       python3 generate_tasks.py /path/to/project 3  # Generate 3 versions")
         sys.exit(1)
 
-    print(f"📁 项目: {project_dir}")
-    print(f"📊 生成版本数: {num_versions}")
+    print(f"📁 Project: {project_dir}")
+    print(f"📊 Versions to generate: {num_versions}")
+
+    # 处理 raw 文件夹（复制并重命名为英文）
+    raw_dir = os.path.join(project_dir, "raw")
+    temp_raw_dir = None
+    renamed_raw_images = []
+
+    if os.path.exists(raw_dir):
+        print(f"\n📸 Processing raw images...")
+        renamed_raw_images, temp_raw_dir = copy_and_rename_raw_images(raw_dir, project_dir)
+        print(f"✅ Created temp_raw/ with {len(renamed_raw_images)} English filenames")
 
     info = parse_zai_report(project_dir)
-    print(f"📦 产品: {info['product_name']} ({info['product_name_en']})")
-    print(f"📸 keyframes 图片: {len(info['product_images'])} 张")
-    print(f"📸 raw 实拍图片: {len(info['raw_images'])} 张")
+    print(f"\n📦 Product: {info['product_name']} ({info['product_name_en']})")
+    print(f"📸 keyframes images: {len(info['product_images'])} files")
+
+    # 更新 raw_images 为重命名后的英文文件名
+    info["raw_images"] = renamed_raw_images
+    print(f"📸 Updated raw_images with {len(renamed_raw_images)} English filenames")
 
     if not info['product_images'] and not info['raw_images']:
-        print("❌ 错误: 没有找到产品图片")
-        print("   请确保项目目录下有 keyframes/ 或 raw/ 文件夹，且包含图片")
+        print("❌ Error: No product images found")
+        print("   Please ensure project directory has keyframes/ or raw/ folder with images")
         sys.exit(1)
 
-    versions = analyze_versions(info, num_versions)
+    versions = analyze_versions(info, num_versions, temp_raw_dir)
 
     if not versions:
-        print("❌ 错误: 无法生成版本")
+        print("❌ Error: Unable to generate versions")
         sys.exit(1)
 
     for v in versions:
@@ -293,11 +345,11 @@ def main():
             json.dump(task, f, indent=2, ensure_ascii=False)
         print(f"✅ {filename} - {v['name']}")
 
-    print(f"\n✅ 完成! 生成了 {len(versions)} 个版本")
-    print(f"📁 位置: {project_dir}")
-    print("\n下一步:")
-    print("   1. python3 convert_to_base64_fixed.py  # 转换为 base64 格式")
-    print("   2. python3 submit_tasks.py              # 提交任务")
+    print(f"\n✅ Complete! Generated {len(versions)} versions")
+    print(f"📁 Location: {project_dir}")
+    print("\nNext steps:")
+    print("   1. python3 convert_to_base64_fixed.py /path/to/project  # Convert to base64 format")
+    print("   2. python3 submit_tasks.py /path/to/project              # Submit tasks")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
 将参考图片转换为 base64 格式并更新 JSON 任务文件
+
+使用方法：
+    python3 convert_to_base64_fixed.py /path/to/project
 """
 import json
 import os
+import sys
 import base64
 
 def image_to_base64(image_path):
@@ -29,8 +33,10 @@ def update_task_json(json_file_path, project_dir):
                 file_name = ref_file.get("fileName", "")
                 # 如果没有 base64，则计算
                 if not ref_file.get("base64"):
-                    # 获取图片完整路径（支持 raw/ 和 keyframes/）
-                    if file_name.startswith("raw/"):
+                    # 获取图片完整路径（支持 temp_raw/、raw/ 和 keyframes/）
+                    if file_name.startswith("temp_raw/"):
+                        image_path = os.path.join(project_dir, file_name)
+                    elif file_name.startswith("raw/"):
                         image_path = os.path.join(project_dir, file_name)
                     elif file_name.startswith("keyframes/"):
                         image_path = os.path.join(project_dir, file_name)
@@ -52,7 +58,9 @@ def update_task_json(json_file_path, project_dir):
                     new_reference_files.append(ref_file)
             else:
                 # 如果是字符串，尝试作为相对路径处理
-                if ref_file.startswith("raw/"):
+                if ref_file.startswith("temp_raw/"):
+                    image_path = os.path.join(project_dir, ref_file)
+                elif ref_file.startswith("raw/"):
                     image_path = os.path.join(project_dir, ref_file)
                 elif ref_file.startswith("keyframes/"):
                     image_path = os.path.join(project_dir, ref_file)
@@ -82,7 +90,7 @@ def update_task_json(json_file_path, project_dir):
     print(f"✅ Updated: {os.path.basename(json_file_path)}")
 
 def main():
-    project_dir = "/Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product"
+    project_dir = sys.argv[1] if len(sys.argv) > 1 else "/Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product"
 
     # 获取所有 seedance_tasks_*.json 文件
     for filename in os.listdir(project_dir):
