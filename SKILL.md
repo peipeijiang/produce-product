@@ -42,17 +42,18 @@ cd /Users/shane/.openclaw/workspace/skills/produce-product/Seedance2-Chrome-Exte
 node mock-server.js &
 ```
 
-### 1.3 启动 Chrome + 扩展（一键启动）
+### 1.3 启动 Chrome 浏览器（简化版）
+
+推荐使用简化启动脚本，避免 Playwright 超时问题：
 
 ```bash
 cd /Users/shane/.openclaw/workspace/skills/produce-product
-bash start-chrome.sh &
+bash start-chrome-simple.sh
 ```
 
-这会自动：
-- 启动 Chrome 浏览器
-- 加载 Seedance 扩展
-- 打开即梦网站 https://jimeng.jianying.com/ai-tool/image/generate
+脚本会显示手动加载 Seedance 扩展的详细步骤。
+
+**注意**：简化脚本只启动浏览器，不会自动加载扩展。需要手动加载 Seedance 扩展后，扩展才会自动连接到 Mock Server。
 
 ---
 
