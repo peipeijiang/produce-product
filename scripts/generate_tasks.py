@@ -307,7 +307,7 @@ def generate_task(version_info, product_name_en, project_dir):
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
                 "referenceMode": "全能参考",  # 英文：全能参考
-                "aspectRatio": "16:9",
+                "aspectRatio": "9:16",
                 "duration": "15s"
             },
             "referenceFiles": ref_files,
