@@ -15,18 +15,25 @@
 3. 在 prompt 中明确要求还原实拍产品的质感
 4. 所有产品画面必须忠实还原实拍图片的材质、光线和表面质感
 
+参考模式：
+- seedance_reference_mode.md: 包含 Seedance 2.0 参考模式的使用说明
+- 支持"参考图像"、"参考视频"、"视频编辑"等模式
+- 在 generate_tasks.py 中通过参数启用
+
 使用方法：
     python3 scripts/generate_tasks.py /path/to/project [num_versions]
 
 示例：
     python3 scripts/generate_tasks.py /path/to/project        # 生成 5 个版本
     python3 scripts/generate_tasks.py /path/to/project 3      # 生成 3 个版本
+    python3 scripts/generate_tasks.py /path/to/project 5 --reference-mode    # 启用参考模式
 """
 import json
 import os
 import sys
 import random
 import shutil
+import re
 
 
 def copy_and_rename_raw_images(raw_dir, project_dir):
@@ -44,15 +51,16 @@ def copy_and_rename_raw_images(raw_dir, project_dir):
 
     # 复制并重命名所有 raw 图片
     for i, filename in enumerate(sorted(os.listdir(raw_dir)), 1):
-        if filename.lower().endswith((".jpg", ".png", ".jpeg")):
-            src = os.path.join(raw_dir, filename)
-            new_filename = f"raw_photo_{i:03d}.jpg"
-            dst = os.path.join(temp_raw_dir, new_filename)
+        if not filename.lower().endswith((".jpg", ".png", ".jpeg")):
+            continue
 
-            # 复制文件
-            shutil.copy2(src, dst)
-            renamed_files.append(new_filename)
-            print(f"   📁 Copied and renamed: {filename} -> {new_filename}")
+        src = os.path.join(raw_dir, filename)
+        new_filename = f"raw_photo_{i:03d}.jpg"
+        dst = os.path.join(temp_raw_dir, new_filename)
+
+        # 复制文件
+        shutil.copy2(src, dst)
+        renamed_files.append(new_filename)
 
     return renamed_files, temp_raw_dir
 
@@ -80,14 +88,12 @@ def parse_zai_report(project_dir):
 
     for line in content.split("\n"):
         if "产品名称" in line and ":" in line:
-            raw_name = line.split(":")[-1].strip()
             # 提取纯中文名（去掉英文括号）
-            import re
-            match = re.search(r'^(.*?)\s*\(', raw_name)
+            match = re.search(r'^(.*?)\s*\(', line.split(":")[-1])
             if match:
                 result["product_name"] = match.group(1).strip()
             else:
-                result["product_name"] = raw_name
+                result["product_name"] = line.split(":")[-1].strip()
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
 
@@ -121,7 +127,7 @@ def parse_zai_report(project_dir):
     return result
 
 
-def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, version_num, temp_raw_dir):
+def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, version_num, temp_raw_dir, use_reference_mode=False):
     """
     生成 Hook-Body-CTA 结构的 15s Prompt（纯英文）
 
@@ -135,6 +141,7 @@ def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, 
         raw_images: raw 文件夹中的实拍图片列表（英文文件名）
         images: keyframes 文件夹中的参考图片列表
         temp_raw_dir: 临时 raw 文件夹路径（用于引用）
+        use_reference_mode: 是否使用参考模式（包含参考视频、镜头语言等）
     """
     # 从 raw 文件夹中选择图片（如果有）
     if raw_images:
@@ -159,13 +166,34 @@ def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, 
     quality_instruction = ""
     if selected_raw_images:
         quality_instruction = """
+
 CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate texture, material quality, and lighting from raw product images. Pay special attention to:
 - Surface texture (matte, glossy, metallic, fabric grain, etc.)
 - Material quality and craftsmanship
 - Lighting and reflections that match real product appearance
 - Color accuracy and depth
 - Any product-specific material characteristics (wood grain, metal finish, fabric softness, etc.)
-The final product render should look indistinguishable from the actual physical product's material quality."""
+The final product render should look indistinguishable from actual physical product's material quality."""
+
+    # 如果使用参考模式，尝试读取参考模式文件
+    if use_reference_mode:
+        import os
+        ref_mode_file = os.path.join(os.path.dirname(__file__), "seedance_reference_mode.md")
+        reference_mode_instruction = ""
+        if os.path.exists(ref_mode_file):
+            with open(ref_mode_file, "r", encoding="utf-8") as f:
+                ref_mode_content = f.read()
+            # 提取参考模式的要点
+            if "【参考图像】" in ref_mode_content:
+                reference_mode_instruction = "\n\n【参考图像】参考图像可精准还原画面构图、角色细节。\n"
+            if "【参考视频】" in ref_mode_content:
+                reference_mode_instruction += "【参考视频】参考视频支持镜头语言、复杂的动作节奏、创意特效的复刻。\n"
+            if "【视频编辑】" in ref_mode_content:
+                reference_mode_instruction += "【视频编辑】视频支持平滑延长与衔接，可按用户提示生成连续镜头，不止生成，还能\"接着拍\"。\n"
+            if "【编辑能力】" in ref_mode_content:
+                reference_mode_instruction += "【编辑能力】编辑能力同步增强，支持对已有视频进行角色更替、删减、增加。\n"
+            if reference_mode_instruction:
+                quality_instruction += "\n\n" + reference_mode_instruction
 
     prompt = f"""{image_refs}
 
@@ -182,7 +210,7 @@ CRITICAL: Include professional English voiceover throughout: "Ready to upgrade y
     return prompt, all_ref_images
 
 
-def analyze_versions(info, num_versions=5, temp_raw_dir=None):
+def analyze_versions(info, num_versions=5, temp_raw_dir=None, use_reference_mode=False):
     """
     根据图片特点自动生成多个版本
 
@@ -191,6 +219,7 @@ def analyze_versions(info, num_versions=5, temp_raw_dir=None):
     参数：
         info: 包含 product_images（keyframes）和 raw_images（实拍图）
         temp_raw_dir: 临时 raw 文件夹路径（英文文件名）
+        use_reference_mode: 是否使用 Seedance 参考模式
     """
     versions = []
     product_name = info["product_name"]
@@ -230,17 +259,23 @@ def analyze_versions(info, num_versions=5, temp_raw_dir=None):
         }
     ]
 
+    # 更新 raw_images 为重命名后的英文文件名
+    if temp_raw_dir and os.path.exists(temp_raw_dir):
+        renamed_files = os.listdir(temp_raw_dir)
+        raw_images = [f for f in renamed_files if f.endswith((".jpg", ".png", ".jpeg"))]
+        print(f"📸 Updated raw_images with {len(raw_images)} English filenames")
+
     # 根据版本数生成
     for i in range(min(num_versions, len(marketing_angles))):
         angle = marketing_angles[i]
         prompt, selected_images = generate_hook_body_cta_prompt(
-            product_name_en, angle["feature"], images, raw_images, i + 1, temp_raw_dir
+            product_name_en, angle["feature"], images, raw_images, i + 1, temp_raw_dir, use_reference_mode
         )
 
         # 构建引用文件列表（temp_raw/ 和 keyframes/）
         ref_files = []
         for img in selected_images:
-            # 如果图片在 raw_images 列表中，使用 temp_raw/ 路径
+            # 如果图片以 raw_photo_ 开头，使用 temp_raw/ 路径
             if img.startswith("raw_photo_"):
                 ref_files.append(f"temp_raw/{img}")
             # 否则使用 keyframes/ 路径
@@ -294,45 +329,51 @@ def main():
     # 解析参数
     num_versions = 5  # 默认生成 5 个版本
     project_dir = None
+    use_reference_mode = False  # 是否使用参考模式
 
     for arg in sys.argv[1:]:
         if arg.isdigit():
             num_versions = int(arg)
+        elif arg == "--reference-mode":
+            use_reference_mode = True
         elif not arg.startswith("-"):
             project_dir = arg
 
     if not project_dir:
-        print("Usage: python3 generate_tasks.py /path/to/project [num_versions]")
-        print("       python3 generate_tasks.py /path/to/project 3  # Generate 3 versions")
+        print("Usage: python3 generate_tasks.py /path/to/project [num_versions] [--reference-mode]")
+        print("       python3 generate_tasks.py /path/to/project 3        # Generate 3 versions")
+        print("       python3 generate_tasks.py /path/to/project 5 --reference-mode    # Enable reference mode")
         sys.exit(1)
 
     print(f"📁 Project: {project_dir}")
     print(f"📊 Versions to generate: {num_versions}")
+    print(f"🔄 Reference mode: {'Enabled' if use_reference_mode else 'Disabled'}")
 
-    # 处理 raw 文件夹（复制并重命名为英文）
+    # 处理 raw 文件夹（复制并重命名为英文文件名）
     raw_dir = os.path.join(project_dir, "raw")
     temp_raw_dir = None
-    renamed_raw_images = []
-
     if os.path.exists(raw_dir):
         print(f"\n📸 Processing raw images...")
         renamed_raw_images, temp_raw_dir = copy_and_rename_raw_images(raw_dir, project_dir)
         print(f"✅ Created temp_raw/ with {len(renamed_raw_images)} English filenames")
+    else:
+        print("\n⚠️  No raw folder found, using keyframes only")
+        renamed_raw_images = []
 
     info = parse_zai_report(project_dir)
     print(f"\n📦 Product: {info['product_name']} ({info['product_name_en']})")
     print(f"📸 keyframes images: {len(info['product_images'])} files")
+    print(f"📸 raw images: {len(info['raw_images'])} files (before rename)")
 
     # 更新 raw_images 为重命名后的英文文件名
     info["raw_images"] = renamed_raw_images
-    print(f"📸 Updated raw_images with {len(renamed_raw_images)} English filenames")
 
     if not info['product_images'] and not info['raw_images']:
         print("❌ Error: No product images found")
         print("   Please ensure project directory has keyframes/ or raw/ folder with images")
         sys.exit(1)
 
-    versions = analyze_versions(info, num_versions, temp_raw_dir)
+    versions = analyze_versions(info, num_versions, temp_raw_dir, use_reference_mode)
 
     if not versions:
         print("❌ Error: Unable to generate versions")
