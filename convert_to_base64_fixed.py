@@ -12,7 +12,12 @@ def image_to_base64(image_path):
         return base64.b64encode(f.read()).decode('utf-8')
 
 def update_task_json(json_file_path, project_dir):
-    """更新任务 JSON 文件，将 referenceFiles 转换为 base64 格式"""
+    """更新任务 JSON 文件，将 referenceFiles 转换为 base64 格式
+
+    支持 raw/ 和 keyframes/ 两个文件夹：
+    - raw/: 实拍图片路径（如 "raw/image.jpg"）
+    - keyframes/: 参考图片路径（如 "keyframes/image.jpg"）
+    """
     with open(json_file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -24,10 +29,13 @@ def update_task_json(json_file_path, project_dir):
                 file_name = ref_file.get("fileName", "")
                 # 如果没有 base64，则计算
                 if not ref_file.get("base64"):
-                    # 获取图片完整路径
-                    if file_name.startswith("keyframes/"):
+                    # 获取图片完整路径（支持 raw/ 和 keyframes/）
+                    if file_name.startswith("raw/"):
+                        image_path = os.path.join(project_dir, file_name)
+                    elif file_name.startswith("keyframes/"):
                         image_path = os.path.join(project_dir, file_name)
                     else:
+                        # 默认从 keyframes/ 加载
                         image_path = os.path.join(project_dir, "keyframes", file_name)
 
                     # 转换为 base64
@@ -44,13 +52,16 @@ def update_task_json(json_file_path, project_dir):
                     new_reference_files.append(ref_file)
             else:
                 # 如果是字符串，尝试作为相对路径处理
-                if ref_file.startswith("keyframes/"):
+                if ref_file.startswith("raw/"):
+                    image_path = os.path.join(project_dir, ref_file)
+                elif ref_file.startswith("keyframes/"):
                     image_path = os.path.join(project_dir, ref_file)
                 else:
+                    # 默认从 keyframes/ 加载
                     image_path = os.path.join(project_dir, "keyframes", ref_file)
 
-                # 获取文件名
-                file_name = os.path.basename(ref_file)
+                # 获取文件名（保留路径前缀）
+                file_name = ref_file
 
                 # 转换为 base64
                 if os.path.exists(image_path):

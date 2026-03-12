@@ -5,8 +5,21 @@
 根据用户指示或产品图片，自动生成营销视频任务。
 如果没有具体场景指示，将自动按照 Hook-Body-CTA 结构生成 15s 英文口播带字幕的视频。
 
+图片目录说明：
+- keyframes/: 参考图片（产品设计图、渲染图等）
+- raw/: 实拍图片（真实产品的质感照片，用于要求 AI 还原质感）
+
+如果 raw/ 文件夹存在且包含图片，生成的任务会：
+1. 从 raw/ 随机选择 3 张（或少于 3 张则全部）作为实拍参考
+2. 在 prompt 中明确要求还原实拍产品的质感
+3. 所有产品画面必须忠实还原实拍图片的材质、光线和表面质感
+
 使用方法：
     python3 scripts/generate_tasks.py /path/to/project [num_versions]
+
+示例：
+    python3 scripts/generate_tasks.py /path/to/project        # 生成 5 个版本
+    python3 scripts/generate_tasks.py /path/to/project 3      # 生成 3 个版本
 """
 import json
 import os
@@ -25,7 +38,8 @@ def parse_zai_report(project_dir):
         "product_type": "Product",
         "colors": [],
         "features": [],
-        "product_images": []
+        "product_images": [],
+        "raw_images": []  # 新增：raw 文件夹中的实拍图片
     }
 
     if not os.path.exists(zai_report):
@@ -53,17 +67,24 @@ def parse_zai_report(project_dir):
     product_name = result["product_name"]
     result["product_name_en"] = cn_to_en.get(product_name, product_name)
 
-    # 获取产品图片
+    # 获取 keyframes 图片（参考图）
     keyframes_dir = os.path.join(project_dir, "keyframes")
     if os.path.exists(keyframes_dir):
         for f in os.listdir(keyframes_dir):
             if f.endswith((".jpg", ".png", ".jpeg")):
                 result["product_images"].append(f)
 
+    # 获取 raw 文件夹中的实拍图片
+    raw_dir = os.path.join(project_dir, "raw")
+    if os.path.exists(raw_dir):
+        for f in os.listdir(raw_dir):
+            if f.endswith((".jpg", ".png", ".jpeg")):
+                result["raw_images"].append(f)
+
     return result
 
 
-def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images, version_num):
+def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images, raw_images, version_num):
     """
     生成 Hook-Body-CTA 结构的 15s Prompt
 
@@ -71,17 +92,45 @@ def generate_hook_body_cta_prompt(product_name, product_name_en, feature, images
     - Hook (0-3s): 吸引注意力
     - Body (3-12s): 展示功能和优势
     - CTA (12-15s): 行动号召
+
+    参数：
+        raw_images: raw 文件夹中的实拍图片列表（必须有质感还原要求）
+        images: keyframes 文件夹中的参考图片列表
     """
+    # 从 raw 文件夹中选择图片（如果有）
+    if raw_images:
+        # 选择 3 张，如果少于 3 张则全部使用
+        selected_raw_images = random.sample(raw_images, min(len(raw_images), 3))
+        print(f"   📸 使用 {len(selected_raw_images)} 张实拍图（来自 raw/）")
+    else:
+        selected_raw_images = []
+        print(f"   ⚠️  raw 文件夹为空或不存在，仅使用 keyframes 图片")
 
-    # 随机选择 3-5 张图片
-    selected_images = random.sample(images, min(len(images), random.randint(3, 5)))
+    # 随机选择 3-5 张 keyframes 图片作为参考
+    if images:
+        selected_keyframes = random.sample(images, min(len(images), random.randint(3, 5)))
+    else:
+        selected_keyframes = []
 
-    # 构建 prompt
-    image_refs = " ".join([f"(@{img})" for img in selected_images])
+    # 构建图片引用（所有引用的图片，包括实拍图和参考图）
+    all_ref_images = selected_raw_images + selected_keyframes
+    image_refs = " ".join([f"(@{img})" for img in all_ref_images])
+
+    # 如果有实拍图片，添加质感还原要求
+    quality_instruction = ""
+    if selected_raw_images:
+        quality_instruction = """
+CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate the texture, material quality, and lighting from the raw product images. The referenced keyframes show the same product design but prioritize capturing the authentic texture and material feel of the raw product photography. Pay special attention to:
+- Surface texture (matte, glossy, metallic, fabric grain, etc.)
+- Material quality and craftsmanship
+- Lighting and reflections that match real product appearance
+- Color accuracy and depth
+- Any product-specific material characteristics (wood grain, metal finish, fabric softness, etc.)
+The final product render should look indistinguishable from the actual physical product's material quality."""
 
     prompt = f"""{image_refs}
 
-HOOK-Body-CTA structured marketing video for {product_name_en}.
+HOOK-Body-CTA structured marketing video for {product_name_en}.{quality_instruction}
 
 HOOK [0-3s]: Eye-catching opening. Product revealed dramatically. Text overlay: "Upgrade Your Life Today". Dynamic camera movement. Product sparkles. ({product_name_en}) takes center stage.
 
@@ -91,7 +140,7 @@ CTA [12-15s]: Strong call to action. Final dramatic shot of {product_name_en}. T
 
 CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is {product_name_en}. Experience premium quality and smart design that fits perfectly into your life. Don't wait, transform your experience today. Shop now limited time offer." Include matching English subtitles. Cinematic style 9:16 15 seconds."""
 
-    return prompt, selected_images
+    return prompt, all_ref_images
 
 
 def analyze_versions(info, num_versions=5):
@@ -99,13 +148,17 @@ def analyze_versions(info, num_versions=5):
     根据图片特点自动生成多个版本
 
     如果没有具体场景指示，自动选择不同的营销角度
+
+    参数：
+        info: 包含 product_images（keyframes）和 raw_images（实拍图）
     """
     versions = []
     product_name = info["product_name"]
     product_name_en = info["product_name_en"]
     images = info["product_images"]
+    raw_images = info["raw_images"]
 
-    if not images:
+    if not images and not raw_images:
         return versions
 
     # 不同的营销角度
@@ -142,13 +195,23 @@ def analyze_versions(info, num_versions=5):
         angle = marketing_angles[i]
         prompt, selected_images = generate_hook_body_cta_prompt(
             product_name, product_name_en,
-            angle["feature"], images, i + 1
+            angle["feature"], images, raw_images, i + 1
         )
+
+        # 构建引用文件列表（raw/ 和 keyframes/ 都需要包含）
+        ref_files = []
+        for img in selected_images:
+            # 如果图片在 raw_images 列表中，使用 raw/ 路径
+            if img in raw_images:
+                ref_files.append(f"raw/{img}")
+            # 否则使用 keyframes/ 路径
+            else:
+                ref_files.append(f"keyframes/{img}")
 
         versions.append({
             "name": angle["description"],
             "direction": f"V{i+1}_{angle['name']}",
-            "ref_files": [f"keyframes/{img}" for img in selected_images],
+            "ref_files": ref_files,
             "prompt": prompt
         })
 
@@ -209,11 +272,12 @@ def main():
 
     info = parse_zai_report(project_dir)
     print(f"📦 产品: {info['product_name']} ({info['product_name_en']})")
-    print(f"📸 可用图片: {len(info['product_images'])} 张")
+    print(f"📸 keyframes 图片: {len(info['product_images'])} 张")
+    print(f"📸 raw 实拍图片: {len(info['raw_images'])} 张")
 
-    if not info['product_images']:
+    if not info['product_images'] and not info['raw_images']:
         print("❌ 错误: 没有找到产品图片")
-        print("   请确保项目目录下有 keyframes/ 文件夹，且包含图片")
+        print("   请确保项目目录下有 keyframes/ 或 raw/ 文件夹，且包含图片")
         sys.exit(1)
 
     versions = analyze_versions(info, num_versions)
