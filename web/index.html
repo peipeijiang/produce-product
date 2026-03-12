@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品视频生产工具 | Produce Product Web</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .step-indicator { transition: all 0.3s ease; }
+        .step-indicator.active { background: #3b82f6; color: white; }
+        .step-indicator.completed { background: #10b981; color: white; }
+        .drag-over { border-color: #3b82f6 !important; background: #eff6ff !important; }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .task-card { transition: all 0.3s ease; }
+        .task-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .progress-bar { transition: width 0.5s ease; }
+        .fade-in { animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+        .preview-item { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 0.5rem; cursor: pointer; }
+        .preview-item img { width: 100%; height: 100%; object-fit: cover; }
+        .preview-item .remove-btn { position: absolute; top: 4px; right: 4px; background: #ef4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app" class="min-h-screen">
+        <!-- 顶部导航 -->
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-2xl font-bold text-gray-900">
+                        <span class="text-blue-600">Produce</span>Product
+                    </h1>
+                    <div class="flex items-center gap-4">
+                        <span id="sse-status" class="flex items-center gap-2 text-sm">
+                            <span class="w-2 h-2 bg-red-500 rounded-full"></span>
+                            未连接
+                        </span>
+                        <button onclick="startChromeExtension()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                            启动 Chrome 扩展
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 步骤指示器 -->
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <div class="flex items-center justify-between bg-white rounded-xl p-4 shadow-sm">
+                <div class="step-indicator active flex-1 flex items-center gap-2" data-step="1">
+                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-semibold">1</span>
+                    <span class="text-sm font-medium">上传图片</span>
+                </div>
+                <div class="w-12 h-0.5 bg-gray-200"></div>
+                <div class="step-indicator flex-1 flex items-center gap-2" data-step="2">
+                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-semibold">2</span>
+                    <span class="text-sm font-medium">ZAI 识别</span>
+                </div>
+                <div class="w-12 h-0.5 bg-gray-200"></div>
+                <div class="step-indicator flex-1 flex items-center gap-2" data-step="3">
+                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-semibold">3</span>
+                    <span class="text-sm font-medium">生成任务</span>
+                </div>
+                <div class="w-12 h-0.5 bg-gray-200"></div>
+                <div class="step-indicator flex-1 flex items-center gap-2" data-step="4">
+                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-semibold">4</span>
+                    <span class="text-sm font-medium">提交生成</span>
+                </div>
+                <div class="w-12 h-0.5 bg-gray-200"></div>
+                <div class="step-indicator flex-1 flex items-center gap-2" data-step="5">
+                    <span class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center font-semibold">5</span>
+                    <span class="text-sm font-medium">监控进度</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区域 -->
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            <!-- 步骤 1: 上传图片 -->
+            <section id="step-1" class="step-content fade-in">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">上传产品图片</h2>
+                    
+                    <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition">
+                        <input type="file" id="file-input" multiple accept="image/*" class="hidden">
+                        <div class="text-gray-500">
+                            <svg class="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            <p class="text-lg mb-2">拖放图片到这里，或点击选择</p>
+                            <p class="text-sm">支持 JPG, PNG 格式</p>
+                        </div>
+                    </div>
+
+                    <div id="image-preview" class="mt-6 hidden">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-3">已上传的图片</h3>
+                        <div class="preview-grid" id="preview-grid"></div>
+                    </div>
+
+                    <button id="next-step-1" class="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+                        下一步：ZAI 识别
+                    </button>
+                </div>
+            </section>
+
+            <!-- 步骤 2: ZAI 识别 -->
+            <section id="step-2" class="step-content hidden">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">ZAI 产品识别</h2>
+                    
+                    <div id="zai-status" class="text-center py-8">
+                        <div class="loader mx-auto mb-4"></div>
+                        <p class="text-gray-600">正在识别产品...</p>
+                    </div>
+
+                    <div id="zai-result" class="hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900 mb-3">产品信息</h3>
+                                <div id="product-info" class="space-y-2"></div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900 mb-3">图片分类</h3>
+                                <div id="image-classification" class="space-y-2"></div>
+                            </div>
+                        </div>
+                        
+                        <button id="next-step-2" class="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition">
+                            下一步：生成任务
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 步骤 3: 生成任务 -->
+            <section id="step-3" class="step-content hidden">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">生成视频任务</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">视频数量</label>
+                            <select id="video-count" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                                <option value="3">3 个版本</option>
+                                <option value="5" selected>5 个版本</option>
+                                <option value="10">10 个版本</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">视频时长</label>
+                            <select id="video-duration" class="w-full border border-gray-300 rounded-lg px-4 py-2">
+                                <option value="10">10 秒</option>
+                                <option value="15" selected>15 秒</option>
+                                <option value="30">30 秒</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="enable-voiceover" checked class="rounded">
+                            <span class="text-sm">英文口播</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="enable-subtitles" class="rounded">
+                            <span class="text-sm">英文字幕</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="enable-hook-cta" checked class="rounded">
+                            <span class="text-sm">Hook-Body-CTA 结构</span>
+                        </label>
+                    </div>
+
+                    <div id="task-preview" class="border border-gray-200 rounded-lg p-4 mb-4 hidden">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-3">任务预览</h3>
+                        <div id="task-list" class="space-y-3"></div>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <button onclick="prevStep(2)" class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition">
+                            上一步
+                        </button>
+                        <button id="next-step-3" class="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition">
+                            下一步：提交生成
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 步骤 4: 提交生成 -->
+            <section id="step-4" class="step-content hidden">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">提交任务到即梦</h2>
+                    
+                    <div id="submit-status" class="text-center py-8">
+                        <div class="loader mx-auto mb-4"></div>
+                        <p class="text-gray-600">正在提交任务...</p>
+                    </div>
+
+                    <div id="submit-result" class="hidden">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                            <p class="text-green-800 font-semibold">✓ 任务提交成功！</p>
+                            <p class="text-green-700 text-sm mt-2">任务已添加到队列，等待 Chrome 扩展处理</p>
+                        </div>
+                        
+                        <div id="submitted-tasks" class="space-y-3"></div>
+
+                        <button id="next-step-4" class="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition">
+                            下一步：监控进度
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 步骤 5: 监控进度 -->
+            <section id="step-5" class="step-content hidden">
+                <div class="bg-white rounded-xl shadow-sm p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-900">生成进度监控</h2>
+                        <button onclick="refreshTasks()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition">
+                            刷新
+                        </button>
+                    </div>
+                    
+                    <div id="tasks-overview" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-blue-600" id="stat-pending">0</p>
+                            <p class="text-sm text-blue-800">待处理</p>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-yellow-600" id="stat-generating">0</p>
+                            <p class="text-sm text-yellow-800">生成中</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-green-600" id="stat-completed">0</p>
+                            <p class="text-sm text-green-800">已完成</p>
+                        </div>
+                        <div class="bg-red-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-red-600" id="stat-failed">0</p>
+                            <p class="text-sm text-red-800">失败</p>
+                        </div>
+                    </div>
+
+                    <div id="task-list-monitor" class="space-y-3"></div>
+
+                    <button onclick="resetFlow()" class="mt-6 w-full bg-gray-600 text-white py-3 rounded-lg hover:bg-gray-700 transition">
+                        重新开始
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- 即梦窗口 iframe -->
+        <div id="jimeng-frame" class="fixed top-0 right-0 w-1/2 h-full bg-white shadow-2xl transform translate-x-full transition-transform duration-300 z-50">
+            <div class="flex items-center justify-between p-4 border-b">
+                <h3 class="font-bold">即梦网站</h3>
+                <button onclick="toggleJimeng()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <iframe src="https://jimeng.jianying.com/ai-tool/image/generate" class="w-full h-full" frameborder="0"></iframe>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 应用状态 ====================
+        const AppState = {
+            currentStep: 1,
+            uploadedImages: [],
+            productInfo: null,
+            tasks: [],
+            sseConnected: false
+        };
+
+        // ==================== Mock Server API ====================
+        const MockServer = {
+            baseUrl: 'http://localhost:3456',
+
+            // 提交任务
+            async submitTask(task) {
+                const response = await fetch(`${this.baseUrl}/api/tasks/push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(task)
+                });
+                return await response.json();
+            },
+
+            // 获取所有任务
+            async getTasks() {
+                const response = await fetch(`${this.baseUrl}/api/tasks`);
+                return await response.json();
+            },
+
+            // 获取服务器状态
+            async getStatus() {
+                const response = await fetch(`${this.baseUrl}/`);
+                return await response.json();
+            }
+        };
+
+        // ==================== ZAI 识别模拟 ====================
+        async function simulateZAIRecognition(images) {
+            // 模拟 API 调用延迟
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // 模拟识别结果
+            const productTypes = ['Pet Bed', 'Smart Ring', 'Smart Watch', 'Headphones'];
+            const colors = ['Gold', 'Black', 'Silver', 'Blue', 'White'];
+            
+            const productInfo = {
+                productName: 'Lesure Pet Bed',
+                productNameEn: 'Lesure Pet Bed',
+                productType: '宠物床',
+                colors: ['Gold', 'Black', 'Silver'],
+                features: ['Memory Foam', 'Waterproof', 'Machine Washable', 'Orthopedic Support'],
+                imageClassifications: images.map((img, index) => ({
+                    file: img.name,
+                    type: index % 2 === 0 ? 'Product Photo' : 'Lifestyle Shot',
+                    color: colors[index % colors.length],
+                    scene: index % 3 === 0 ? 'Indoor' : 'Outdoor'
+                }))
+            };
+
+            return productInfo;
+        }
+
+        // ==================== 任务生成 ====================
+        function generateTasks(productInfo, count, duration, options) {
+            const angles = [
+                { name: 'Premium_Luxury', feature: 'premium craftsmanship and elegant design' },
+                { name: 'Smart_Features', feature: 'innovative smart features' },
+                { name: 'Lifestyle_Daily', feature: 'seamless daily integration' },
+                { name: 'Performance_Quality', feature: 'exceptional performance and reliability' },
+                { name: 'Best_Value', feature: 'unbeatable value and benefits' }
+            ];
+
+            const tasks = [];
+            for (let i = 0; i < Math.min(count, angles.length); i++) {
+                const angle = angles[i];
+                const prompt = generatePrompt(productInfo, angle, duration, options);
+                
+                tasks.push({
+                    video_id: `PRODUCT-V${i+1}_${angle.name}`,
+                    description: `${angle.name.replace(/_/g, ' ')} ${duration}s`,
+                    prompt: prompt,
+                    modelConfig: {
+                        model: 'Seedance 2.0 Fast',
+                        referenceMode: '全能参考',
+                        aspectRatio: '9:16',
+                        duration: parseInt(duration)
+                    },
+                    referenceFiles: AppState.uploadedImages.map(img => ({
+                        fileName: img.name,
+                        base64: img.base64
+                    }))
+                });
+            }
+            return tasks;
+        }
+
+        function generatePrompt(productInfo, angle, duration, options) {
+            const productName = productInfo.productNameEn;
+            const feature = angle.feature;
+            const structure = options.enableHookCta ? 
+                'HOOK-Body-CTA structured marketing video' : 'Marketing video';
+            
+            let prompt = `(@selected_images) ${structure} for ${productName}.\n\n`;
+
+            if (options.enableHookCta) {
+                prompt += `HOOK [0-${Math.floor(duration * 0.2)}s]: Eye-catching opening. Product revealed dramatically. Text overlay: "Upgrade Your Life Today". Dynamic camera movement. ${productName} takes center stage.\n\n`;
+                
+                prompt += `BODY [${Math.floor(duration * 0.2)}-${Math.floor(duration * 0.8)}s]: Feature showcase: ${feature}. Person using product in real-life scenario. Multiple angles showing design excellence. Smooth transitions between scenes. Text overlays appear dynamically: "Premium Quality", "Smart Design", "Daily Essential". Close-up shots highlight details. Product demonstrates its value through action.\n\n`;
+                
+                prompt += `CTA [${Math.floor(duration * 0.8)}-${duration}s]: Strong call to action. Final dramatic shot of ${productName}. Text overlay: "Shop Now - Limited Time Offer". Urgent feeling. Product name displayed prominently. Bold, confident ending.\n\n`;
+            } else {
+                prompt += `Feature showcase: ${feature}. Person using product in real-life scenario. Multiple angles showing design excellence. Smooth transitions between scenes. Text overlays: "Premium Quality", "Smart Design", "Daily Essential".\n\n`;
+            }
+
+            if (options.enableVoiceover) {
+                prompt += `CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is ${productName}. Experience premium quality and smart design that fits perfectly into your life. ${options.enableHookCta ? "Don't wait, transform your experience today. Shop now limited time offer." : ""}"`;
+            }
+
+            if (options.enableSubtitles) {
+                prompt += ` Include matching English subtitles.`;
+            }
+
+            prompt += ` Cinematic style 9:16 ${duration}s.`;
+
+            return prompt;
+        }
+
+        // ==================== 文件处理 ====================
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const previewGrid = document.getElementById('preview-grid');
+        const imagePreview = document.getElementById('image-preview');
+
+        // 拖放事件
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        AppState.uploadedImages.push({
+                            name: file.name,
+                            base64: e.target.result.split(',')[1],
+                            preview: e.target.result
+                        });
+                        renderPreview();
+                        updateNextButton();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        function renderPreview() {
+            previewGrid.innerHTML = AppState.uploadedImages.map((img, index) => `
+                <div class="preview-item">
+                    <img src="${img.preview}" alt="${img.name}">
+                    <div class="remove-btn" onclick="removeImage(${index})">×</div>
+                </div>
+            `).join('');
+            
+            imagePreview.classList.toggle('hidden', AppState.uploadedImages.length === 0);
+        }
+
+        function removeImage(index) {
+            AppState.uploadedImages.splice(index, 1);
+            renderPreview();
+            updateNextButton();
+        }
+
+        function updateNextButton() {
+            const btn = document.getElementById('next-step-1');
+            btn.disabled = AppState.uploadedImages.length === 0;
+        }
+
+        // ==================== 步骤管理 ====================
+        function goToStep(step) {
+            document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`step-${step}`).classList.remove('hidden');
+            document.getElementById(`step-${step}`).classList.add('fade-in');
+            
+            document.querySelectorAll('.step-indicator').forEach(el => {
+                const stepNum = parseInt(el.dataset.step);
+                el.classList.remove('active', 'completed');
+                if (stepNum === step) el.classList.add('active');
+                else if (stepNum < step) el.classList.add('completed');
+            });
+            
+            AppState.currentStep = step;
+        }
+
+        function prevStep(currentStep) {
+            goToStep(currentStep - 1);
+        }
+
+        // ==================== 步骤 2: ZAI 识别 ====================
+        document.getElementById('next-step-1').addEventListener('click', async () => {
+            goToStep(2);
+            
+            const statusDiv = document.getElementById('zai-status');
+            const resultDiv = document.getElementById('zai-result');
+            
+            statusDiv.classList.remove('hidden');
+            resultDiv.classList.add('hidden');
+            
+            try {
+                AppState.productInfo = await simulateZAIRecognition(AppState.uploadedImages);
+                
+                statusDiv.classList.add('hidden');
+                resultDiv.classList.remove('hidden');
+                
+                // 渲染产品信息
+                document.getElementById('product-info').innerHTML = `
+                    <div class="text-sm text-gray-600">产品名称</div>
+                    <div class="font-semibold">${AppState.productInfo.productName}</div>
+                    <div class="text-sm text-gray-600 mt-2">英文名称</div>
+                    <div class="font-semibold">${AppState.productInfo.productNameEn}</div>
+                    <div class="text-sm text-gray-600 mt-2">产品类型</div>
+                    <div class="font-semibold">${AppState.productInfo.productType}</div>
+                    <div class="text-sm text-gray-600 mt-2">可选颜色</div>
+                    <div class="font-semibold">${AppState.productInfo.colors.join(', ')}</div>
+                `;
+                
+                // 渲染图片分类
+                document.getElementById('image-classification').innerHTML = AppState.productInfo.imageClassifications.map(img => `
+                    <div class="border border-gray-200 rounded-lg p-3">
+                        <div class="text-xs text-gray-500">${img.file}</div>
+                        <div class="text-sm font-medium">${img.type}</div>
+                        <div class="text-xs text-gray-500">${img.color} | ${img.scene}</div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('ZAI 识别失败:', error);
+                alert('ZAI 识别失败，请重试');
+                goToStep(1);
+            }
+        });
+
+        // ==================== 步骤 3: 生成任务 ====================
+        document.getElementById('next-step-2').addEventListener('click', () => {
+            goToStep(3);
+            previewTasks();
+        });
+
+        function previewTasks() {
+            const count = document.getElementById('video-count').value;
+            const duration = document.getElementById('video-duration').value;
+            const options = {
+                enableVoiceover: document.getElementById('enable-voiceover').checked,
+                enableSubtitles: document.getElementById('enable-subtitles').checked,
+                enableHookCta: document.getElementById('enable-hook-cta').checked
+            };
+            
+            AppState.tasks = generateTasks(AppState.productInfo, count, duration, options);
+            
+            const previewDiv = document.getElementById('task-preview');
+            const listDiv = document.getElementById('task-list');
+            
+            previewDiv.classList.remove('hidden');
+            listDiv.innerHTML = AppState.tasks.map((task, index) => `
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium">${task.description}</span>
+                        <span class="text-sm text-gray-500">${task.modelConfig.duration}s</span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1 truncate">${task.prompt.substring(0, 100)}...</div>
+                </div>
+            `).join('');
+        }
+
+        // 监听选项变化
+        ['video-count', 'video-duration', 'enable-voiceover', 'enable-subtitles', 'enable-hook-cta'].forEach(id => {
+            document.getElementById(id).addEventListener('change', previewTasks);
+        });
+
+        // ==================== 步骤 4: 提交任务 ====================
+        document.getElementById('next-step-3').addEventListener('click', async () => {
+            goToStep(4);
+            
+            const statusDiv = document.getElementById('submit-status');
+            const resultDiv = document.getElementById('submit-result');
+            
+            statusDiv.classList.remove('hidden');
+            resultDiv.classList.add('hidden');
+            
+            try {
+                // 提交所有任务
+                const results = await Promise.all(
+                    AppState.tasks.map(task => MockServer.submitTask(task))
+                );
+                
+                statusDiv.classList.add('hidden');
+                resultDiv.classList.remove('hidden');
+                
+                // 显示提交结果
+                document.getElementById('submitted-tasks').innerHTML = AppState.tasks.map((task, index) => `
+                    <div class="task-card bg-gray-50 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium">${task.description}</span>
+                            <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">已提交</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">任务代码: ${task.video_id}</div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('提交任务失败:', error);
+                alert('提交任务失败，请检查 Mock Server 是否运行');
+                goToStep(3);
+            }
+        });
+
+        // ==================== 步骤 5: 监控进度 ====================
+        document.getElementById('next-step-4').addEventListener('click', () => {
+            goToStep(5);
+            refreshTasks();
+        });
+
+        async function refreshTasks() {
+            try {
+                const data = await MockServer.getTasks();
+                updateTaskOverview(data);
+                updateTaskListMonitor(data);
+            } catch (error) {
+                console.error('刷新任务失败:', error);
+            }
+        }
+
+        function updateTaskOverview(data) {
+            const counts = {
+                pending: 0,
+                generating: 0,
+                completed: 0,
+                failed: 0
+            };
+            
+            data.tasks.forEach(task => {
+                const status = task.status || 'pending';
+                if (counts[status] !== undefined) {
+                    counts[status]++;
+                }
+            });
+            
+            document.getElementById('stat-pending').textContent = counts.pending;
+            document.getElementById('stat-generating').textContent = counts.generating;
+            document.getElementById('stat-completed').textContent = counts.completed;
+            document.getElementById('stat-failed').textContent = counts.failed;
+        }
+
+        function updateTaskListMonitor(data) {
+            const listDiv = document.getElementById('task-list-monitor');
+            listDiv.innerHTML = data.tasks.slice(-10).reverse().map(task => {
+                const statusColors = {
+                    pending: 'bg-blue-100 text-blue-800',
+                    generating: 'bg-yellow-100 text-yellow-800',
+                    completed: 'bg-green-100 text-green-800',
+                    failed: 'bg-red-100 text-red-800'
+                };
+                const statusLabels = {
+                    pending: '待处理',
+                    generating: '生成中',
+                    completed: '已完成',
+                    failed: '失败'
+                };
+                
+                return `
+                    <div class="task-card bg-gray-50 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium">${task.taskCode || task.video_id}</span>
+                            <span class="text-xs ${statusColors[task.status] || 'bg-gray-100 text-gray-800'} px-2 py-1 rounded">
+                                ${statusLabels[task.status] || task.status}
+                            </span>
+                        </div>
+                        <div class="text-sm text-gray-600 mt-1">${task.description || '无描述'}</div>
+                        ${task.occupiedBy ? `<div class="text-xs text-gray-500 mt-1">占用: ${task.occupiedBy}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==================== 重置流程 ====================
+        function resetFlow() {
+            AppState.currentStep = 1;
+            AppState.uploadedImages = [];
+            AppState.productInfo = null;
+            AppState.tasks = [];
+            
+            // 重置 UI
+            renderPreview();
+            updateNextButton();
+            goToStep(1);
+        }
+
+        // ==================== Chrome 扩展 ====================
+        function startChromeExtension() {
+            // 模拟启动 Chrome 扩展
+            alert('Chrome 扩展启动命令已发送（需要后端支持）');
+            // 在实际实现中，这里会调用后端 API 启动 Chrome
+        }
+
+        // ==================== SSE 连接监控 ====================
+        async function checkSSEConnection() {
+            try {
+                const status = await MockServer.getStatus();
+                const sseCount = status.sseClients || 0;
+                const sseStatus = document.getElementById('sse-status');
+                
+                if (sseCount > 0) {
+                    sseStatus.innerHTML = `
+                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        已连接 (${sseCount})
+                    `;
+                    AppState.sseConnected = true;
+                } else {
+                    sseStatus.innerHTML = `
+                        <span class="w-2 h-2 bg-red-500 rounded-full"></span>
+                        未连接
+                    `;
+                    AppState.sseConnected = false;
+                }
+            } catch (error) {
+                console.error('检查 SSE 连接失败:', error);
+            }
+        }
+
+        // 每 5 秒检查一次 SSE 连接
+        setInterval(checkSSEConnection, 5000);
+
+        // ==================== 即梦窗口 ====================
+        function toggleJimeng() {
+            const frame = document.getElementById('jimeng-frame');
+            frame.classList.toggle('translate-x-full');
+        }
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            goToStep(1);
+            checkSSEConnection();
+        });
+    </script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 ---
+
 name: produce-product
 description: 产品营销视频制作。根据产品图片，智能设计营销视频版本。适用于电商展示、产品宣传。
 version: 2.5.0
----
 
 # 产品营销视频制作 (produce-product)
 
@@ -56,7 +56,7 @@ bash start-chrome.sh &
 
 ---
 
-## 步骤 2：ZAI 图片识别
+### 步骤 2：ZAI 图片识别
 
 ### 2.1 准备产品图片
 
@@ -264,7 +264,7 @@ for task in d['tasks'][-5:]:
 ### 2. Reference Mode 保持中文
 - ✅ `"referenceMode": "全能参考"` 可以是中文
 
-### 3. 严格按用户指令生成版本数
+### 3. 严格按照用户指令生成版本数
 - 用户说生成几个就生成几个
 - 不自动生成更多版本
 
@@ -336,8 +336,8 @@ curl -s http://localhost:3456/api/tasks | jq '.tasks[-5:]'
 
 **每个视频都包含：**
 - ✅ Hook-Body-CTA 结构
-- ✅ 英文口播 (English voiceover)
-- ✅ 英文字幕 (English subtitles)
+- ✅ 英文口播
+- ✅ 英文字幕
 - ✅ 9:16 竖屏格式
 - ✅ 15 秒时长
 
@@ -426,25 +426,27 @@ ls /path/to/project/products/
 cat /path/to/project/products/ZAI_full_analysis_report.md
 ```
 
+
+
 ---
 
 ## 更新日志
 
 ### v2.5.0
-- **修复：修正 duration 配置格式**
+- **修复**：修正 duration 配置格式
   - 将 `duration` 从 "15s" 改为 15（纯数字）
   - 即梦网站期望纯数字格式
   - 确保视频时长正确显示为 15 秒
 
 ### v2.4.0
-- **修复：添加 ZAI 图片识别步骤**
+- **修复**：添加 ZAI 图片识别步骤
   - 在"环境准备"和"生成任务"之间插入"ZAI 图片识别"
   - 完整工作流程：6 步
   - 添加 ZAI 识别方法和示例
   - 添加 ZAI 报告格式说明
 
 ### v2.3.0
-- **重大更新：移除场景脚本依赖**
+- **重大更新**：移除场景脚本依赖
   - 简化工作流程：直接根据产品图片生成任务
   - 自动按照 Hook-Body-CTA 结构生成 15s prompt
   - 自动选择 5 个不同营销角度
@@ -462,3 +464,7 @@ cat /path/to/project/products/ZAI_full_analysis_report.md
 - 修复 prompt 中文问题
 - 添加 seedance_submit.py
 - 更新 SKILL.md
+
+---
+
+

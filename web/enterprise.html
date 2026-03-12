@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produce Product - 企业版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .nav-item.active { background: #3b82f6; color: white; }
+        .task-card { transition: all 0.3s ease; }
+        .task-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .kanban-column { min-height: 400px; }
+        .schedule-item { transition: all 0.3s ease; }
+        .schedule-item:hover { transform: scale(1.02); }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .material-item { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 0.5rem; cursor: pointer; }
+        .material-item img { width: 100%; height: 100%; object-fit: cover; }
+        .material-item .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.3s; display: flex; align-items: center; justify-content: center; }
+        .material-item:hover .overlay { opacity: 1; }
+        .playwright-frame { width: 100%; height: 600px; border: 1px solid #e5e7eb; border-radius: 0.5rem; }
+        .schedule-timeline { position: relative; padding-left: 30px; }
+        .schedule-timeline::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: #e5e7eb; }
+        .timeline-dot { position: absolute; left: 5px; width: 12px; height: 12px; border-radius: 50%; background: #3b82f6; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app" class="min-h-screen flex">
+        <!-- 侧边导航 -->
+        <aside class="w-64 bg-white shadow-sm flex flex-col">
+            <div class="p-6 border-b">
+                <h1 class="text-xl font-bold">
+                    <span class="text-blue-600">Produce</span>Product
+                </h1>
+                <p class="text-xs text-gray-500 mt-1">企业版 v2.0</p>
+            </div>
+            <nav class="flex-1 p-4 space-y-2">
+                <button onclick="navigateTo('projects')" class="nav-item active w-full text-left px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-folder mr-2"></i>项目列表
+                </button>
+                <button onclick="navigateTo('tasks')" class="nav-item w-full text-left px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-tasks mr-2"></i>任务中心
+                </button>
+                <button onclick="navigateTo('schedule')" class="nav-item w-full text-left px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-clock mr-2"></i>定时任务
+                </button>
+                <button onclick="navigateTo('playwright')" class="nav-item w-full text-left px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-browser mr-2"></i>Playwright
+                </button>
+            </nav>
+            <div class="p-4 border-t">
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span>Server: 在线</span>
+                </div>
+                <div class="flex items-center gap-2 text-sm mt-2">
+                    <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    <span id="sse-status">SSE: 未连接</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区域 -->
+        <main class="flex-1 overflow-auto">
+            <!-- 项目列表页面 -->
+            <section id="projects-view" class="view-section fade-in">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold">项目管理</h2>
+                        <button onclick="showCreateProjectModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                            <i class="fas fa-plus mr-2"></i>新建项目
+                        </button>
+                    </div>
+                    
+                    <div id="projects-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- 项目卡片将通过 JS 动态插入 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 项目详情页面 -->
+            <section id="project-detail-view" class="view-section hidden">
+                <div class="p-6">
+                    <button onclick="navigateTo('projects')" class="text-gray-500 hover:text-gray-700 mb-4">
+                        <i class="fas fa-arrow-left mr-2"></i>返回项目列表
+                    </button>
+                    
+                    <div class="bg-white rounded-xl shadow-sm p-6 mb-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-2xl font-bold" id="detail-project-name">项目名称</h2>
+                                <p class="text-gray-500" id="detail-project-desc">项目描述</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="startProductionFlow()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                                    <i class="fas fa-play mr-2"></i>开始生产
+                                </button>
+                                <button onclick="showEditProjectModal()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition">
+                                    <i class="fas fa-edit mr-2"></i>编辑
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- 素材库 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-semibold">素材库</h3>
+                                <button onclick="showUploadModal()" class="bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 transition text-sm">
+                                    <i class="fas fa-upload mr-1"></i>上传素材
+                                </button>
+                            </div>
+                            <div id="materials-grid" class="grid grid-cols-3 gap-3">
+                                <!-- 素材将通过 JS 动态插入 -->
+                            </div>
+                        </div>
+
+                        <!-- 任务计划 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-lg font-semibold">任务计划</h3>
+                                <button onclick="showCreateTaskModal()" class="bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 transition text-sm">
+                                    <i class="fas fa-plus mr-1"></i>新建任务
+                                </button>
+                            </div>
+                            <div id="task-plans" class="space-y-3">
+                                <!-- 任务计划将通过 JS 动态插入 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 任务中心页面 -->
+            <section id="tasks-view" class="view-section hidden">
+                <div class="p-6">
+                    <h2 class="text-2xl font-bold mb-6">任务中心</h2>
+                    
+                    <!-- 统计卡片 -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-blue-600" id="stat-pending">0</p>
+                            <p class="text-sm text-blue-800">待处理</p>
+                        </div>
+                        <div class="bg-yellow-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-yellow-600" id="stat-generating">0</p>
+                            <p class="text-sm text-yellow-800">生成中</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-green-600" id="stat-completed">0</p>
+                            <p class="text-sm text-green-800">已完成</p>
+                        </div>
+                        <div class="bg-red-50 rounded-lg p-4">
+                            <p class="text-2xl font-bold text-red-600" id="stat-failed">0</p>
+                            <p class="text-sm text-red-800">失败</p>
+                        </div>
+                    </div>
+
+                    <!-- Kanban 看板 -->
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="bg-white rounded-xl shadow-sm p-4 kanban-column">
+                            <h3 class="font-semibold mb-3 text-blue-600">待处理</h3>
+                            <div id="kanban-pending" class="space-y-3"></div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-4 kanban-column">
+                            <h3 class="font-semibold mb-3 text-yellow-600">生成中</h3>
+                            <div id="kanban-generating" class="space-y-3"></div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-4 kanban-column">
+                            <h3 class="font-semibold mb-3 text-green-600">已完成</h3>
+                            <div id="kanban-completed" class="space-y-3"></div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm p-4 kanban-column">
+                            <h3 class="font-semibold mb-3 text-red-600">失败</h3>
+                            <div id="kanban-failed" class="space-y-3"></div>
+                        </div>
+                    </div>
+
+                    <!-- 执行历史 -->
+                    <div class="mt-8">
+                        <h3 class="text-lg font-semibold mb-4">执行历史</h3>
+                        <div id="execution-history" class="space-y-3">
+                            <!-- 历史记录将通过 JS 动态插入 -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 定时任务页面 -->
+            <section id="schedule-view" class="view-section hidden">
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold">定时任务</h2>
+                        <button onclick="showCreateScheduleModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                            <i class="fas fa-plus mr-2"></i>新建定时任务
+                        </button>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- 定时任务列表 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <h3 class="text-lg font-semibold mb-4">任务列表</h3>
+                            <div id="schedule-list" class="space-y-3">
+                                <!-- 定时任务将通过 JS 动态插入 -->
+                            </div>
+                        </div>
+
+                        <!-- 任务时间线 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <h3 class="text-lg font-semibold mb-4">执行时间线</h3>
+                            <div id="schedule-timeline" class="schedule-timeline">
+                                <!-- 时间线将通过 JS 动态插入 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Playwright 页面 -->
+            <section id="playwright-view" class="view-section hidden">
+                <div class="p-6">
+                    <h2 class="text-2xl font-bold mb-6">Playwright 控制台</h2>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- 浏览器控制 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <h3 class="text-lg font-semibold mb-4">浏览器控制</h3>
+                            <div class="space-y-3">
+                                <button onclick="startPlaywright()" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition">
+                                    <i class="fas fa-play mr-2"></i>启动浏览器
+                                </button>
+                                <button onclick="stopPlaywright()" class="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 transition">
+                                    <i class="fas fa-stop mr-2"></i>停止浏览器
+                                </button>
+                                <button onclick="refreshBrowser()" class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition">
+                                    <i class="fas fa-sync mr-2"></i>刷新页面
+                                </button>
+                            </div>
+                            
+                            <div class="mt-6">
+                                <h4 class="font-medium mb-2">状态</h4>
+                                <div id="playwright-status" class="bg-gray-50 rounded-lg p-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 bg-gray-500 rounded-full"></span>
+                                        <span>未启动</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 即梦网页 -->
+                        <div class="bg-white rounded-xl shadow-sm p-6">
+                            <h3 class="text-lg font-semibold mb-4">即梦网页</h3>
+                            <div id="jimeng-container" class="playwright-frame bg-gray-100 rounded-lg flex items-center justify-center">
+                                <p class="text-gray-500">点击"启动浏览器"查看即梦网页</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 提交任务列表 -->
+                    <div class="mt-6 bg-white rounded-xl shadow-sm p-6">
+                        <h3 class="text-lg font-semibold mb-4">提交任务列表</h3>
+                        <div id="submitted-tasks" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <!-- 提交的任务将通过 JS 动态插入 -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-lg">
+                <!-- 模态框内容将通过 JS 动态插入 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 应用状态 ====================
+        const AppState = {
+            currentView: 'projects',
+            currentProject: null,
+            projects: [
+                {
+                    id: 'proj-001',
+                    name: 'Lesure Pet Bed',
+                    description: 'Lesure 宠物床营销视频',
+                    createdAt: '2026-03-11',
+                    materials: [],
+                    taskPlans: []
+                },
+                {
+                    id: 'proj-002',
+                    name: 'JELLY BELLES Smart Ring',
+                    description: '智能戒指营销视频',
+                    createdAt: '2026-03-10',
+                    materials: [],
+                    taskPlans: []
+                }
+            ],
+            tasks: [],
+            schedules: [],
+            playwrightRunning: false
+        };
+
+        // ==================== Mock Server API ====================
+        const MockServer = {
+            baseUrl: 'http://localhost:3456',
+
+            async getTasks() {
+                const response = await fetch(`${this.baseUrl}/api/tasks`);
+                return await response.json();
+            },
+
+            async getStatus() {
+                const response = await fetch(`${this.baseUrl}/`);
+                return await response.json();
+            },
+
+            async submitTask(task) {
+                const response = await fetch(`${this.baseUrl}/api/tasks/push`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(task)
+                });
+                return await response.json();
+            }
+        };
+
+        const webServerUrl = 'http://localhost:3457';
+
+        // ==================== 导航 ====================
+        function navigateTo(view) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`${view}-view`).classList.remove('hidden');
+            document.getElementById(`${view}-view`).classList.add('fade-in');
+            
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            event.target.closest('.nav-item').classList.add('active');
+            
+            AppState.currentView = view;
+            
+            // 刷新视图数据
+            if (view === 'tasks') refreshTaskCenter();
+            if (view === 'schedule') refreshScheduleView();
+            if (view === 'playwright') {
+                refreshPlaywrightView();
+                // 自动启动 Chrome
+                autoStartChrome();
+            }
+        }
+
+        // ==================== 项目列表 ====================
+        function renderProjects() {
+            const grid = document.getElementById('projects-grid');
+            grid.innerHTML = AppState.projects.map(project => `
+                <div class="bg-white rounded-xl shadow-sm p-6 task-card cursor-pointer" onclick="showProjectDetail('${project.id}')">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="font-bold text-lg">${project.name}</h3>
+                        <span class="text-xs text-gray-500">${project.createdAt}</span>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4">${project.description}</p>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-500">
+                            <i class="fas fa-image mr-1"></i>${project.materials.length} 素材
+                        </span>
+                        <span class="text-sm text-gray-500">
+                            <i class="fas fa-tasks mr-1"></i>${project.taskPlans.length} 任务
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showProjectDetail(projectId) {
+            AppState.currentProject = AppState.projects.find(p => p.id === projectId);
+            
+            document.getElementById('detail-project-name').textContent = AppState.currentProject.name;
+            document.getElementById('detail-project-desc').textContent = AppState.currentProject.description;
+            
+            renderMaterials();
+            renderTaskPlans();
+            
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById('project-detail-view').classList.remove('hidden');
+        }
+
+        // ==================== 素材管理 ====================
+        function renderMaterials() {
+            const grid = document.getElementById('materials-grid');
+            if (AppState.currentProject.materials.length === 0) {
+                grid.innerHTML = '<p class="text-gray-500 text-sm col-span-3 text-center py-8">暂无素材</p>';
+                return;
+            }
+            
+            grid.innerHTML = AppState.currentProject.materials.map((mat, index) => `
+                <div class="material-item">
+                    <img src="${mat.preview}" alt="${mat.name}">
+                    <div class="overlay">
+                        <button onclick="removeMaterial(${index})" class="text-white text-2xl">×</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showUploadModal() {
+            const overlay = document.getElementById('modal-overlay');
+            overlay.classList.remove('hidden');
+            
+            overlay.querySelector('.bg-white').innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold">上传素材</h3>
+                        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="upload-dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition">
+                        <p class="text-gray-500">拖放图片到这里，或点击选择</p>
+                        <input type="file" id="upload-input" multiple accept="image/*" class="hidden">
+                    </div>
+                    <div id="upload-preview" class="mt-4 grid grid-cols-3 gap-2"></div>
+                    <button onclick="confirmUpload()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                        确认上传
+                    </button>
+                </div>
+            `;
+            
+            // 拖放事件
+            const dropzone = document.getElementById('upload-dropzone');
+            dropzone.addEventListener('click', () => document.getElementById('upload-input').click());
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('border-blue-500');
+            });
+            dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-blue-500'));
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('border-blue-500');
+                handleUploadFiles(e.dataTransfer.files);
+            });
+            document.getElementById('upload-input').addEventListener('change', (e) => handleUploadFiles(e.target.files));
+        }
+
+        let uploadedMaterials = [];
+        function handleUploadFiles(files) {
+            Array.from(files).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        uploadedMaterials.push({
+                            name: file.name,
+                            base64: e.target.result.split(',')[1],
+                            preview: e.target.result
+                        });
+                        renderUploadPreview();
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        function renderUploadPreview() {
+            const preview = document.getElementById('upload-preview');
+            preview.innerHTML = uploadedMaterials.map((mat, index) => `
+                <div class="relative aspect-square">
+                    <img src="${mat.preview}" class="w-full h-full object-cover rounded">
+                    <button onclick="removeUploadMaterial(${index})" class="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full">×</button>
+                </div>
+            `).join('');
+        }
+
+        function removeUploadMaterial(index) {
+            uploadedMaterials.splice(index, 1);
+            renderUploadPreview();
+        }
+
+        function confirmUpload() {
+            AppState.currentProject.materials.push(...uploadedMaterials);
+            uploadedMaterials = [];
+            closeModal();
+            renderMaterials();
+        }
+
+        function removeMaterial(index) {
+            AppState.currentProject.materials.splice(index, 1);
+            renderMaterials();
+        }
+
+        // ==================== 任务计划 ====================
+        function renderTaskPlans() {
+            const container = document.getElementById('task-plans');
+            if (AppState.currentProject.taskPlans.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">暂无任务计划</p>';
+                return;
+            }
+            
+            container.innerHTML = AppState.currentProject.taskPlans.map((plan, index) => `
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium">${plan.name}</span>
+                        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">${plan.status}</span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">${plan.videoCount} 个视频 · ${plan.duration}s</div>
+                </div>
+            `).join('');
+        }
+
+        function showCreateTaskModal() {
+            const overlay = document.getElementById('modal-overlay');
+            overlay.classList.remove('hidden');
+            
+            overlay.querySelector('.bg-white').innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold">创建任务计划</h3>
+                        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">计划名称</label>
+                            <input type="text" id="task-plan-name" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="例如：春季营销视频">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">视频数量</label>
+                            <select id="task-plan-count" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                <option value="3">3 个版本</option>
+                                <option value="5" selected>5 个版本</option>
+                                <option value="10">10 个版本</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">视频时长</label>
+                            <select id="task-plan-duration" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                <option value="10">10 秒</option>
+                                <option value="15" selected>15 秒</option>
+                                <option value="30">30 秒</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="confirmCreateTaskPlan()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                        创建计划
+                    </button>
+                </div>
+            `;
+        }
+
+        function confirmCreateTaskPlan() {
+            const name = document.getElementById('task-plan-name').value;
+            const count = document.getElementById('task-plan-count').value;
+            const duration = document.getElementById('task-plan-duration').value;
+            
+            if (!name) {
+                alert('请输入计划名称');
+                return;
+            }
+            
+            AppState.currentProject.taskPlans.push({
+                name,
+                videoCount: count,
+                duration,
+                status: '待执行'
+            });
+            
+            closeModal();
+            renderTaskPlans();
+        }
+
+        // ==================== 生产流程 ====================
+        function startProductionFlow() {
+            if (AppState.currentProject.materials.length === 0) {
+                alert('请先上传素材');
+                return;
+            }
+            
+            alert('生产流程已启动（模拟）');
+        }
+
+        // ==================== 任务中心 ====================
+        async function refreshTaskCenter() {
+            try {
+                const data = await MockServer.getTasks();
+                AppState.tasks = data.tasks;
+                
+                updateTaskStats();
+                renderKanban();
+                renderExecutionHistory();
+            } catch (error) {
+                console.error('刷新任务失败:', error);
+            }
+        }
+
+        function updateTaskStats() {
+            const counts = { pending: 0, generating: 0, completed: 0, failed: 0 };
+            
+            AppState.tasks.forEach(task => {
+                const status = task.status || 'pending';
+                if (counts[status] !== undefined) {
+                    counts[status]++;
+                }
+            });
+            
+            document.getElementById('stat-pending').textContent = counts.pending;
+            document.getElementById('stat-generating').textContent = counts.generating;
+            document.getElementById('stat-completed').textContent = counts.completed;
+            document.getElementById('stat-failed').textContent = counts.failed;
+        }
+
+        function renderKanban() {
+            const statusColors = {
+                pending: 'bg-blue-100 text-blue-800',
+                generating: 'bg-yellow-100 text-yellow-800',
+                completed: 'bg-green-100 text-green-800',
+                failed: 'bg-red-100 text-red-800'
+            };
+            
+            ['pending', 'generating', 'completed', 'failed'].forEach(status => {
+                const container = document.getElementById(`kanban-${status}`);
+                const tasks = AppState.tasks.filter(t => (t.status || 'pending') === status);
+                
+                container.innerHTML = tasks.map(task => `
+                    <div class="bg-gray-50 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-sm">${task.taskCode || task.video_id}</span>
+                            <span class="text-xs ${statusColors[status]} px-2 py-1 rounded">${status}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">${task.description || '无描述'}</div>
+                    </div>
+                `).join('');
+            });
+        }
+
+        function renderExecutionHistory() {
+            const container = document.getElementById('execution-history');
+            const recentTasks = AppState.tasks.slice(-10).reverse();
+            
+            if (recentTasks.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">暂无执行历史</p>';
+                return;
+            }
+            
+            container.innerHTML = recentTasks.map(task => `
+                <div class="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                        <span class="font-medium">${task.taskCode || task.video_id}</span>
+                        <span class="text-xs text-gray-500 ml-2">${task.description || ''}</span>
+                    </div>
+                    <span class="text-xs text-gray-400">${new Date().toLocaleTimeString()}</span>
+                </div>
+            `).join('');
+        }
+
+        // ==================== 定时任务 ====================
+        function refreshScheduleView() {
+            renderScheduleList();
+            renderScheduleTimeline();
+        }
+
+        function renderScheduleList() {
+            const container = document.getElementById('schedule-list');
+            
+            if (AppState.schedules.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">暂无定时任务</p>';
+                return;
+            }
+            
+            container.innerHTML = AppState.schedules.map(schedule => `
+                <div class="border border-gray-200 rounded-lg p-3 schedule-item">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium">${schedule.name}</span>
+                        <span class="text-xs ${schedule.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} px-2 py-1 rounded">
+                            ${schedule.active ? '运行中' : '已停止'}
+                        </span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${schedule.project} · ${schedule.schedule} · ${schedule.nextRun}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderScheduleTimeline() {
+            const container = document.getElementById('schedule-timeline');
+            
+            if (AppState.schedules.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">暂无执行记录</p>';
+                return;
+            }
+            
+            container.innerHTML = AppState.schedules.map(schedule => `
+                <div class="relative pl-6 pb-4">
+                    <div class="timeline-dot top-2"></div>
+                    <div class="font-medium">${schedule.name}</div>
+                    <div class="text-xs text-gray-500">${schedule.lastRun || '等待执行'}</div>
+                </div>
+            `).join('');
+        }
+
+        function showCreateScheduleModal() {
+            const overlay = document.getElementById('modal-overlay');
+            overlay.classList.remove('hidden');
+            
+            overlay.querySelector('.bg-white').innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold">创建定时任务</h3>
+                        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">任务名称</label>
+                            <input type="text" id="schedule-name" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="例如：每日自动生产">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">选择项目</label>
+                            <select id="schedule-project" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                ${AppState.projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">执行频率</label>
+                            <select id="schedule-frequency" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                <option value="daily">每天</option>
+                                <option value="weekly">每周</option>
+                                <option value="monthly">每月</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">执行时间</label>
+                            <input type="time" id="schedule-time" value="09:00" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        </div>
+                    </div>
+                    <button onclick="confirmCreateSchedule()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                        创建定时任务
+                    </button>
+                </div>
+            `;
+        }
+
+        function confirmCreateSchedule() {
+            const name = document.getElementById('schedule-name').value;
+            const projectId = document.getElementById('schedule-project').value;
+            const frequency = document.getElementById('schedule-frequency').value;
+            const time = document.getElementById('schedule-time').value;
+            const project = AppState.projects.find(p => p.id === projectId);
+            
+            if (!name) {
+                alert('请输入任务名称');
+                return;
+            }
+            
+            AppState.schedules.push({
+                name,
+                project: project.name,
+                projectId,
+                schedule: `${frequency} ${time}`,
+                nextRun: calculateNextRun(frequency, time),
+                active: true
+            });
+            
+            closeModal();
+            refreshScheduleView();
+        }
+
+        function calculateNextRun(frequency, time) {
+            const now = new Date();
+            const [hours, minutes] = time.split(':').map(Number);
+            
+            const nextRun = new Date(now);
+            nextRun.setHours(hours, minutes, 0, 0);
+            
+            if (nextRun <= now) {
+                nextRun.setDate(nextRun.getDate() + 1);
+            }
+            
+            return nextRun.toLocaleString('zh-CN');
+        }
+
+        // ==================== Playwright ====================
+        function refreshPlaywrightView() {
+            const status = document.getElementById('playwright-status');
+            
+            if (AppState.playwrightRunning) {
+                status.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                        <span>运行中</span>
+                    </div>
+                `;
+                
+                document.getElementById('jimeng-container').innerHTML = `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-exclamation-triangle text-yellow-600 mt-1"></i>
+                            <div>
+                                <p class="font-medium text-yellow-800">即梦网站可能拒绝自动化访问</p>
+                                <p class="text-sm text-yellow-700 mt-1">如果下方网页显示"拒绝访问"，请手动操作：</p>
+                                <ol class="text-sm text-yellow-700 mt-2 list-decimal list-inside">
+                                    <li>点击下方"在新标签打开"</li>
+                                    <li>在即梦网站手动登录（如有需要）</li>
+                                    <li>刷新页面或重新访问</li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="playwright-frame bg-gray-100 rounded-lg overflow-hidden" style="height: 600px;">
+                        <iframe 
+                            src="https://jimeng.jianying.com/ai-tool/image/generate" 
+                            class="w-full h-full" 
+                            frameborder="0"
+                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
+                            referrerpolicy="no-referrer"
+                        ></iframe>
+                    </div>
+                    
+                    <div class="mt-4 text-center">
+                        <a href="https://jimeng.jianying.com/ai-tool/image/generate" target="_blank" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition inline-block">
+                            <i class="fas fa-external-link-alt mr-2"></i>在新标签打开
+                        </a>
+                    </div>
+                `;
+            } else {
+                status.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 bg-gray-500 rounded-full"></span>
+                        <span>未启动</span>
+                    </div>
+                `;
+                
+                document.getElementById('jimeng-container').innerHTML = `
+                    <div class="bg-gray-50 rounded-lg p-6 text-center">
+                        <p class="text-gray-500 mb-4">点击"启动浏览器"查看即梦网页</p>
+                        <button onclick="autoStartChrome()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                            <i class="fas fa-play mr-2"></i>启动浏览器
+                        </button>
+                    </div>
+                `;
+            }
+            
+            renderSubmittedTasks();
+        }
+
+        function renderSubmittedTasks() {
+            const container = document.getElementById('submitted-tasks');
+            const tasks = AppState.tasks.slice(-6).reverse();
+            
+            if (tasks.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-sm col-span-3 text-center py-8">暂无提交的任务</p>';
+                return;
+            }
+            
+            container.innerHTML = tasks.map(task => `
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm">${task.taskCode || task.video_id}</span>
+                        <span class="text-xs ${task.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'} px-2 py-1 rounded">
+                            ${task.status === 'completed' ? '已完成' : '生成中'}
+                        </span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">${task.description || ''}</div>
+                </div>
+            `).join('');
+        }
+
+        function startPlaywright() {
+            autoStartChrome();
+        }
+
+        // 自动启动 Chrome
+        async function autoStartChrome() {
+            try {
+                // 检查 Chrome 是否已运行
+                const statusRes = await fetch(`${webServerUrl}/api/chrome-status`);
+                const statusData = await statusRes.json();
+                
+                if (statusData.running) {
+                    console.log('Chrome 已在运行');
+                    AppState.playwrightRunning = true;
+                    refreshPlaywrightView();
+                    return;
+                }
+                
+                // 启动 Chrome
+                const res = await fetch(`${webServerUrl}/api/start-chrome`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    console.log('✅ Chrome 启动中...');
+                    AppState.playwrightRunning = true;
+                    refreshPlaywrightView();
+                } else {
+                    console.error('❌ Chrome 启动失败:', data.error);
+                    alert('Chrome 启动失败：' + data.error);
+                }
+            } catch (error) {
+                console.error('❌ 自动启动 Chrome 失败:', error);
+                // 不显示错误，静默失败
+            }
+        }
+
+        function stopPlaywright() {
+            fetch(`${webServerUrl}/api/stop-chrome`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        AppState.playwrightRunning = false;
+                        refreshPlaywrightView();
+                    }
+                })
+                .catch(error => console.error('停止 Chrome 失败:', error));
+        }
+
+        function stopPlaywright() {
+            AppState.playwrightRunning = false;
+            refreshPlaywrightView();
+            alert('Playwright 浏览器已停止');
+        }
+
+        function refreshBrowser() {
+            if (!AppState.playwrightRunning) {
+                alert('请先启动浏览器');
+                return;
+            }
+            
+            refreshPlaywrightView();
+            alert('页面已刷新');
+        }
+
+        // ==================== 通用 ====================
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.add('hidden');
+            uploadedMaterials = [];
+        }
+
+        function showCreateProjectModal() {
+            const overlay = document.getElementById('modal-overlay');
+            overlay.classList.remove('hidden');
+            
+            overlay.querySelector('.bg-white').innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold">新建项目</h3>
+                        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">项目名称</label>
+                            <input type="text" id="project-name" class="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="例如：产品营销视频">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">项目描述</label>
+                            <textarea id="project-desc" class="w-full border border-gray-300 rounded-lg px-3 py-2" rows="3" placeholder="简要描述项目内容"></textarea>
+                        </div>
+                    </div>
+                    <button onclick="confirmCreateProject()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                        创建项目
+                    </button>
+                </div>
+            `;
+        }
+
+        function confirmCreateProject() {
+            const name = document.getElementById('project-name').value;
+            const desc = document.getElementById('project-desc').value;
+            
+            if (!name) {
+                alert('请输入项目名称');
+                return;
+            }
+            
+            AppState.projects.push({
+                id: `proj-${Date.now()}`,
+                name,
+                description: desc || '暂无描述',
+                createdAt: new Date().toISOString().split('T')[0],
+                materials: [],
+                taskPlans: []
+            });
+            
+            closeModal();
+            renderProjects();
+        }
+
+        function showEditProjectModal() {
+            const overlay = document.getElementById('modal-overlay');
+            overlay.classList.remove('hidden');
+            
+            overlay.querySelector('.bg-white').innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold">编辑项目</h3>
+                        <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">项目名称</label>
+                            <input type="text" id="edit-project-name" value="${AppState.currentProject.name}" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">项目描述</label>
+                            <textarea id="edit-project-desc" class="w-full border border-gray-300 rounded-lg px-3 py-2" rows="3">${AppState.currentProject.description}</textarea>
+                        </div>
+                    </div>
+                    <button onclick="confirmEditProject()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                        保存修改
+                    </button>
+                </div>
+            `;
+        }
+
+        function confirmEditProject() {
+            AppState.currentProject.name = document.getElementById('edit-project-name').value;
+            AppState.currentProject.description = document.getElementById('edit-project-desc').value;
+            
+            closeModal();
+            showProjectDetail(AppState.currentProject.id);
+            renderProjects();
+        }
+
+        // ==================== SSE 连接监控 ====================
+        async function checkSSEConnection() {
+            try {
+                const status = await MockServer.getStatus();
+                const sseCount = status.sseClients || 0;
+                const sseStatus = document.getElementById('sse-status');
+                
+                if (sseCount > 0) {
+                    sseStatus.textContent = `SSE: 已连接 (${sseCount})`;
+                } else {
+                    sseStatus.textContent = `SSE: 未连接`;
+                }
+            } catch (error) {
+                console.error('检查 SSE 连接失败:', error);
+            }
+        }
+
+        // 每 5 秒检查一次 SSE 连接
+        setInterval(checkSSEConnection, 5000);
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            renderProjects();
+            checkSSEConnection();
+        });
+    </script>
+</body>
+</html>
