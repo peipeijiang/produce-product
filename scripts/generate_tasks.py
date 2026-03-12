@@ -275,10 +275,10 @@ def analyze_versions(info, num_versions=5, temp_raw_dir=None, use_reference_mode
         # 构建引用文件列表（temp_raw/ 和 keyframes/）
         ref_files = []
         for img in selected_images:
-            # 如果图片以 raw_photo_ 开头，使用 temp_raw/ 路径
+            # 如果图片以 raw_photo_ 开头，使用 temp_raw/ 路径（用于读取图片）
             if img.startswith("raw_photo_"):
                 ref_files.append(f"temp_raw/{img}")
-            # 否则使用 keyframes/ 路径
+            # 否则使用 keyframes/ 路径（用于读取图片）
             else:
                 ref_files.append(f"keyframes/{img}")
 
@@ -312,7 +312,7 @@ def generate_task(version_info, product_name_en, project_dir):
                 "model": "Seedance 2.0 Fast",
                 "referenceMode": "全能参考",  # 英文：全能参考
                 "aspectRatio": "9:16",
-                "duration": 15
+                "duration": "15s"
             },
             "referenceFiles": ref_files,
             "videoReferences": [],
