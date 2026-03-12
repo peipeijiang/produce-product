@@ -205,7 +205,7 @@ BODY [3-12s]: Feature showcase: {feature}. Person using product in real-life sce
 
 CTA [12-15s]: Strong call to action. Final dramatic shot of {product_name_en}. Text overlay: "Shop Now - Limited Time Offer". Urgent feeling. Product name displayed prominently. Link to purchase. Bold, confident ending.
 
-CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is {product_name_en}. Experience premium quality and smart design that fits perfectly into your life. Don't wait, transform your experience today. Shop now limited time offer." Include matching English subtitles. Cinematic style 9:16 15 seconds."""
+CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is {product_name_en}. Experience premium quality and smart design that fits perfectly into your life. Don't wait, transform your experience today. Shop now limited time offer." Include matching English subtitles. Cinematic style 9:16 15s duration."""
 
     return prompt, all_ref_images
 
