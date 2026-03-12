@@ -282,7 +282,13 @@ def analyze_versions(info, num_versions=5, temp_raw_dir=None, use_reference_mode
             "name": angle["description"],
             "direction": f"V{i+1}_{angle['name']}",
             "ref_files": ref_files,
-            "prompt": prompt
+            "prompt": prompt,
+            "modelConfig": {
+                "model": "Seedance 2.0 Fast",
+                "referenceMode": "全能参考",
+                "aspectRatio": "9:16",
+                "duration": "15s"
+            }
         })
 
     return versions
