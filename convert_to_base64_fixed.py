@@ -68,13 +68,19 @@ def update_task_json(json_file_path, project_dir):
                     # 默认从 keyframes/ 加载
                     image_path = os.path.join(project_dir, "keyframes", ref_file)
 
-                # 获取文件名（只保留纯文件名，不包含路径前缀）
+                # 获取文件名（已经是纯文件名，不包含路径前缀）
                 if isinstance(ref_file, dict):
-                    full_name = ref_file.get("fileName", "")
-                    # 使用 os.path.basename 去除路径前缀，只保留文件名
-                    file_name = os.path.basename(full_name)
+                    file_name = ref_file.get("fileName", "")
                 else:
                     file_name = ref_file
+
+                # 根据文件名判断图片路径（temp_raw/ 或 keyframes/）
+                if file_name.startswith("raw_photo_"):
+                    # 实拍图片在 temp_raw/ 文件夹
+                    image_path = os.path.join(project_dir, "temp_raw", file_name)
+                else:
+                    # 参考图片在 keyframes/ 文件夹
+                    image_path = os.path.join(project_dir, "keyframes", file_name)
 
                 # 转换为 base64
                 if os.path.exists(image_path):

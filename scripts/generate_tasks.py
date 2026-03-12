@@ -272,15 +272,11 @@ def analyze_versions(info, num_versions=5, temp_raw_dir=None, use_reference_mode
             product_name_en, angle["feature"], images, raw_images, i + 1, temp_raw_dir, use_reference_mode
         )
 
-        # 构建引用文件列表（temp_raw/ 和 keyframes/）
+        # 构建引用文件列表（只包含纯文件名，不加路径前缀）
         ref_files = []
         for img in selected_images:
-            # 如果图片以 raw_photo_ 开头，使用 temp_raw/ 路径（用于读取图片）
-            if img.startswith("raw_photo_"):
-                ref_files.append(f"temp_raw/{img}")
-            # 否则使用 keyframes/ 路径（用于读取图片）
-            else:
-                ref_files.append(f"keyframes/{img}")
+            # 只添加纯文件名（不包含 temp_raw/ 或 keyframes/ 路径前缀）
+            ref_files.append(img)
 
         versions.append({
             "name": angle["description"],
