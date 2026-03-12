@@ -159,7 +159,7 @@ def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, 
     quality_instruction = ""
     if selected_raw_images:
         quality_instruction = """
-CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate texture, material quality, and lighting from raw product images. The referenced keyframes show the same product design but prioritize capturing the authentic texture and material feel of raw product photography. Pay special attention to:
+CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate texture, material quality, and lighting from raw product images. Pay special attention to:
 - Surface texture (matte, glossy, metallic, fabric grain, etc.)
 - Material quality and craftsmanship
 - Lighting and reflections that match real product appearance
@@ -275,7 +275,7 @@ def generate_task(version_info, product_name_en, project_dir):
             "description": version_info["name"],
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
-                "referenceMode": "Comprehensive Reference",  # 英文：全能参考
+                "referenceMode": "全能参考",  # 英文：全能参考
                 "aspectRatio": "9:16",
                 "duration": 15
             },

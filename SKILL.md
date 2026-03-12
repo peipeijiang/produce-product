@@ -298,6 +298,17 @@ for task in d['tasks'][-5:]:
 - ✅ 识别报告用于翻译产品名、选择营销角度
 - ✅ 如果没有 ZAI 报告，会使用默认信息
 
+### 9. Raw 图片质感还原要求
+- ✅ Raw 文件夹中的实拍图片会自动复制并重命名为英文（如 `raw_photo_001.jpg`）
+- ✅ Prompt 中会添加 **CRITICAL QUALITY REQUIREMENT** 要求还原 raw 图片的质感
+- ✅ Keyframes 图片只作为构图参考，不强调质感还原
+- ✅ 质感还原要求包括：表面纹理、材质质量、光线反射、色彩准确性等
+
+### 10. Seedance 2.0 使用手册
+- 📚 手册链接：https://bytedance.larkoffice.com/wiki/A5RHwWhoBiOnjukIIw6cu5ybnXQ
+- 📖 包含完整的功能说明、参数预览、使用方式等
+- ✅ 建议使用 Seedance 2.0 模型获得更流畅的体验
+
 ---
 
 ## 完整示例
