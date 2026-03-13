@@ -1,68 +1,38 @@
 #!/usr/bin/env python3
 """
-智能生成产品营销视频任务
+智能生成产品功能展示视频任务（面向后期可剪辑素材）
 
-根据用户指示或产品图片，自动生成营销视频任务。
-如果没有具体场景指示，将自动按照 Hook-Body-CTA 结构生成 15s 英文口播带字幕的视频。
-
-图片目录说明：
-- keyframes/: 参考图片（产品设计图、渲染图等）
-- raw/: 实拍图片（真实产品的质感照片，用于要求 AI 还原质感）
-
-如果 raw/ 文件夹存在且包含图片，生成的任务会：
-1. 从 raw/ 随机选择 3 张（或少于 3 张则全部）作为实拍参考
-2. 复制并重命名为英文文件名（避免 prompt 出现中文）
-3. 在 prompt 中明确要求还原实拍产品的质感
-4. 所有产品画面必须忠实还原实拍图片的材质、光线和表面质感
-
-参考模式：
-- seedance_reference_mode.md: 包含 Seedance 2.0 参考模式的使用说明
-- 支持"参考图像"、"参考视频"、"视频编辑"等模式
-- 在 generate_tasks.py 中通过参数启用
+根据产品图片与分析报告，自动生成多版本 15s 竖屏任务。
+- 不使用 Hook-Body-CTA
+- 不要配音，不要字幕
+- 可包含类似 PPT 的英文文字说明（overlay text）
+- keyframes: 功能与场景参考
+- raw: 材质与质感参考
 
 使用方法：
     python3 scripts/generate_tasks.py /path/to/project [num_versions]
-
-示例：
-    python3 scripts/generate_tasks.py /path/to/project        # 生成 5 个版本
-    python3 scripts/generate_tasks.py /path/to/project 3      # 生成 3 个版本
-    python3 scripts/generate_tasks.py /path/to/project 5 --reference-mode    # 启用参考模式
 """
 import json
 import os
 import sys
-import random
-import shutil
 import re
+from collections import defaultdict
 
 
-def copy_and_rename_raw_images(raw_dir, project_dir):
-    """
-    复制 raw 文件夹中的图片并重命名为英文，避免 prompt 中出现中文
+def collect_image_files(directory):
+    """收集目录中的图片文件名（仅文件，不含子目录）"""
+    image_files = []
+    if not os.path.exists(directory):
+        return image_files
 
-    返回：(重命名后的英文文件名列表, 临时文件夹路径)
-    """
-    renamed_files = []
-    temp_raw_dir = os.path.join(project_dir, "temp_raw")
-
-    # 创建临时文件夹
-    if not os.path.exists(temp_raw_dir):
-        os.makedirs(temp_raw_dir)
-
-    # 复制并重命名所有 raw 图片
-    for i, filename in enumerate(sorted(os.listdir(raw_dir)), 1):
-        if not filename.lower().endswith((".jpg", ".png", ".jpeg")):
+    for file_name in os.listdir(directory):
+        full_path = os.path.join(directory, file_name)
+        if not os.path.isfile(full_path):
             continue
+        if file_name.lower().endswith((".jpg", ".jpeg", ".png")):
+            image_files.append(file_name)
 
-        src = os.path.join(raw_dir, filename)
-        new_filename = f"raw_photo_{i:03d}.jpg"
-        dst = os.path.join(temp_raw_dir, new_filename)
-
-        # 复制文件
-        shutil.copy2(src, dst)
-        renamed_files.append(new_filename)
-
-    return renamed_files, temp_raw_dir
+    return image_files
 
 
 def parse_zai_report(project_dir):
@@ -76,8 +46,9 @@ def parse_zai_report(project_dir):
         "product_type": "Product",
         "colors": [],
         "features": [],
+        "scenes": [],
         "product_images": [],
-        "raw_images": []  # 新增：raw 文件夹中的实拍图片
+        "raw_images": []
     }
 
     if not os.path.exists(zai_report):
@@ -86,16 +57,21 @@ def parse_zai_report(project_dir):
     with open(zai_report) as f:
         content = f.read()
 
-    for line in content.split("\n"):
+    for raw_line in content.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+
         if "产品名称" in line and ":" in line:
-            # 提取纯中文名（去掉英文括号）
-            match = re.search(r'^(.*?)\s*\(', line.split(":")[-1])
-            if match:
-                result["product_name"] = match.group(1).strip()
-            else:
-                result["product_name"] = line.split(":")[-1].strip()
+            result["product_name"] = line.split(":")[-1].strip()
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
+
+        # 尽量从报告里抽取功能和场景关键词
+        if any(k in line for k in ["核心功能", "功能", "卖点", "特性", "亮点"]):
+            result["features"].extend(extract_keywords(line))
+        if any(k in line for k in ["场景", "使用场景", "适用场景"]):
+            result["scenes"].extend(extract_keywords(line))
 
     # 简单的产品名翻译
     cn_to_en = {
@@ -110,185 +86,349 @@ def parse_zai_report(project_dir):
     product_name = result["product_name"]
     result["product_name_en"] = cn_to_en.get(product_name, product_name)
 
-    # 获取 keyframes 图片（参考图）
-    keyframes_dir = os.path.join(project_dir, "keyframes")
-    if os.path.exists(keyframes_dir):
-        for f in os.listdir(keyframes_dir):
-            if f.endswith((".jpg", ".png", ".jpeg")):
-                result["product_images"].append(f)
+    # 如果报告信息不足，则从图片文件名补充关键词
+    if not result["features"] and not result["scenes"]:
+        keyframes_dir = os.path.join(project_dir, "keyframes")
+        for file_name in collect_image_files(keyframes_dir):
+            tokens = tokenize_text(file_name)
+            result["features"].extend(tokens)
 
-    # 获取 raw 文件夹中的实拍图片（使用原始文件名，后续会重命名）
+    result["features"] = unique_preserve(result["features"])
+    result["scenes"] = unique_preserve(result["scenes"])
+
+    # 获取产品图片（keyframes）
+    keyframes_dir = os.path.join(project_dir, "keyframes")
+    result["product_images"] = collect_image_files(keyframes_dir)
+
+    # 获取 raw 质感参考图（可选）
     raw_dir = os.path.join(project_dir, "raw")
-    if os.path.exists(raw_dir):
-        for f in os.listdir(raw_dir):
-            if f.endswith((".jpg", ".png", ".jpeg")):
-                result["raw_images"].append(f)
+    result["raw_images"] = collect_image_files(raw_dir)
 
     return result
 
 
-def generate_hook_body_cta_prompt(product_name_en, feature, images, raw_images, version_num, temp_raw_dir, use_reference_mode=False):
-    """
-    生成 Hook-Body-CTA 结构的 15s Prompt（纯英文）
+def tokenize_text(text):
+    tokens = re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]+", text.lower())
+    return [t for t in tokens if len(t) >= 2]
 
-    结构：
-    - Hook (0-3s): 吸引注意力
-    - Body (3-12s): 展示功能和优势
-    - CTA (12-15s): 行动号召
 
-    参数：
-        product_name_en: 英文产品名（Prompt 中必须使用英文）
-        raw_images: raw 文件夹中的实拍图片列表（英文文件名）
-        images: keyframes 文件夹中的参考图片列表
-        temp_raw_dir: 临时 raw 文件夹路径（用于引用）
-        use_reference_mode: 是否使用参考模式（包含参考视频、镜头语言等）
-    """
-    # 从 raw 文件夹中选择图片（如果有）
-    if raw_images:
-        # 选择 3 张，如果少于 3 张则全部使用
-        selected_raw_images = random.sample(raw_images, min(len(raw_images), 3))
-        print(f"   📸 Using {len(selected_raw_images)} real photos (from raw/)")
+def extract_keywords(line):
+    cleaned = re.sub(r"^[\-\*\d\.\s]+", "", line)
+    parts = re.split(r"[，,;；、:：|/]", cleaned)
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        # 长片段再拆词，短片段直接留原词
+        if len(p) > 12:
+            out.extend(tokenize_text(p))
+        else:
+            out.append(p)
+    return out
+
+
+def sanitize_keywords(items):
+    banned = {
+        "核心功能", "功能", "卖点", "特性", "亮点",
+        "场景", "使用场景", "适用场景", "产品名称", "产品类型"
+    }
+    output = []
+    for i in items:
+        text = re.sub(r"[\s_\-]+", " ", i).strip()
+        if not text:
+            continue
+        if text in banned:
+            continue
+        output.append(text)
+    return unique_preserve(output)
+
+
+def unique_preserve(items):
+    seen = set()
+    output = []
+    for i in items:
+        key = i.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(i)
+    return output
+
+
+def guess_product_family(product_name_en, product_type, features):
+    text = f"{product_name_en} {product_type} {' '.join(features)}".lower()
+    if any(k in text for k in ["ring", "watch", "band", "wear", "health", "fitness"]):
+        return "wearable"
+    if any(k in text for k in ["pet", "cat", "dog"]):
+        return "pet"
+    if any(k in text for k in ["speaker", "audio", "earbud", "headphone"]):
+        return "audio"
+    return "generic"
+
+
+def build_scene_bank(product_name_en, family, features, scenes):
+    feature_text = ", ".join(features[:4]) if features else "core product benefits"
+    custom_scene = scenes[0] if scenes else "Everyday use"
+
+    if family == "wearable":
+        return [
+            ("Morning Routine", "quick setup and glanceable metrics", "Fast setup, clear status"),
+            ("Workout Tracking", "active movement and live feedback", "Track movement in real time"),
+            ("Desk Focus", "distraction-free passive monitoring", "Stay focused, stay informed"),
+            ("Night Recovery", "sleep and recovery insights", "Recover better overnight"),
+            ("Close-up Materials", "premium finish and tactile details", "Premium materials, refined finish"),
+        ]
+    if family == "pet":
+        return [
+            ("Living Room Comfort", "pet relaxing naturally at home", "Comfort for everyday rest"),
+            ("Nap Time Detail", "supportive shape and soft contact points", "Supportive and soft"),
+            ("Owner Interaction", "human-pet interaction in normal routine", "Fits real home routines"),
+            ("Material Close-up", "surface texture and stitching details", "Quality you can see"),
+            ("Multi-angle Utility", "different placement and use moments", "Practical in every corner"),
+        ]
+    if family == "audio":
+        return [
+            ("Commute Scene", "portable daily audio usage", "Ready for daily commute"),
+            ("Work Session", "focus audio in desk scenario", "Focused sound, clean setup"),
+            ("Workout Scene", "stable fit during movement", "Stable fit in motion"),
+            ("Call Scenario", "clear communication moment", "Clear calls, less noise"),
+            ("Material Close-up", "driver housing and finishing details", "Precision build quality"),
+        ]
+
+    return [
+        ("Hero Overview", f"{feature_text}", "Core value at a glance"),
+        ("Scene 1", f"{custom_scene}", "Designed for real-world use"),
+        ("Scene 2", "functional interaction with the product", "Function shown in context"),
+        ("Detail Macro", "material and structure close-up", "Details define quality"),
+        ("Lifestyle Wrap", "integration into daily routine", "Fits into everyday life"),
+    ]
+
+
+def build_focus_pool(features, scenes):
+    feature_pool = sanitize_keywords(features) or ["core function"]
+    scene_pool = sanitize_keywords(scenes) or ["everyday use"]
+    return feature_pool, scene_pool
+
+
+def choose_focus(feature_pool, scene_pool, feature_usage, scene_usage, version_num):
+    feature_sorted = sorted(feature_pool, key=lambda x: (feature_usage[x.lower()], x.lower()))
+    scene_sorted = sorted(scene_pool, key=lambda x: (scene_usage[x.lower()], x.lower()))
+
+    # 固定选择“当前使用最少”的项，先覆盖完整维度，再进入重复
+    feature = feature_sorted[0]
+    scene = scene_sorted[0]
+    feature_usage[feature.lower()] += 1
+    scene_usage[scene.lower()] += 1
+    return feature, scene
+
+
+def select_keyframes_for_scene(images, scene_name, scene_focus, features, version_num, image_usage):
+    if not images:
+        return []
+
+    scored = []
+    scene_tokens = tokenize_text(scene_name) + tokenize_text(scene_focus)
+    feature_tokens = []
+    for f in features[:6]:
+        feature_tokens.extend(tokenize_text(f))
+    tokens = set(scene_tokens + feature_tokens)
+
+    for img in images:
+        name_tokens = set(tokenize_text(img))
+        score = 0
+        for t in tokens:
+            if t in name_tokens:
+                score += 2
+            elif t in img.lower():
+                score += 1
+        # 使用次数越少越优先，推动版本间多样性
+        score += max(0, 5 - image_usage[img])
+        scored.append((score, img))
+
+    # 高分优先；分数相同按文件名排序，保证可复现
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    high_ranked = [name for score, name in scored if score > 0]
+    fallback = [name for _, name in scored]
+    if high_ranked:
+        ranked = high_ranked + [name for name in fallback if name not in high_ranked]
     else:
-        selected_raw_images = []
-        print(f"   ⚠️  No raw images, using keyframes only")
+        ranked = fallback
 
-    # 随机选择 3-5 张 keyframes 图片作为参考
-    if images:
-        selected_keyframes = random.sample(images, min(len(images), random.randint(3, 5)))
-    else:
-        selected_keyframes = []
+    pick_count = min(4, max(3, len(images) // 2))
 
-    # 构建图片引用（所有引用的图片，包括实拍图和参考图）
-    all_ref_images = selected_raw_images + selected_keyframes
-    image_refs = " ".join([f"(@{img})" for img in all_ref_images])
-
-    # 如果有实拍图片，添加质感还原要求
-    quality_instruction = ""
-    if selected_raw_images:
-        quality_instruction = """
-
-CRITICAL QUALITY REQUIREMENT: All product shots must faithfully recreate texture, material quality, and lighting from raw product images. Pay special attention to:
-- Surface texture (matte, glossy, metallic, fabric grain, etc.)
-- Material quality and craftsmanship
-- Lighting and reflections that match real product appearance
-- Color accuracy and depth
-- Any product-specific material characteristics (wood grain, metal finish, fabric softness, etc.)
-The final product render should look indistinguishable from actual physical product's material quality."""
-
-    # 如果使用参考模式，尝试读取参考模式文件
-    if use_reference_mode:
-        import os
-        ref_mode_file = os.path.join(os.path.dirname(__file__), "seedance_reference_mode.md")
-        reference_mode_instruction = ""
-        if os.path.exists(ref_mode_file):
-            with open(ref_mode_file, "r", encoding="utf-8") as f:
-                ref_mode_content = f.read()
-            # 提取参考模式的要点
-            if "【参考图像】" in ref_mode_content:
-                reference_mode_instruction = "\n\n【参考图像】参考图像可精准还原画面构图、角色细节。\n"
-            if "【参考视频】" in ref_mode_content:
-                reference_mode_instruction += "【参考视频】参考视频支持镜头语言、复杂的动作节奏、创意特效的复刻。\n"
-            if "【视频编辑】" in ref_mode_content:
-                reference_mode_instruction += "【视频编辑】视频支持平滑延长与衔接，可按用户提示生成连续镜头，不止生成，还能\"接着拍\"。\n"
-            if "【编辑能力】" in ref_mode_content:
-                reference_mode_instruction += "【编辑能力】编辑能力同步增强，支持对已有视频进行角色更替、删减、增加。\n"
-            if reference_mode_instruction:
-                quality_instruction += "\n\n" + reference_mode_instruction
-
-    prompt = f"""{image_refs}
-
-HOOK-Body-CTA structured marketing video for {product_name_en}.{quality_instruction}
-
-HOOK [0-3s]: Eye-catching opening. Product revealed dramatically. Text overlay: "Upgrade Your Life Today". Dynamic camera movement. Product sparkles. ({product_name_en}) takes center stage.
-
-BODY [3-12s]: Feature showcase: {feature}. Person using product in real-life scenario. Multiple angles showing design excellence. Smooth transitions between scenes. Text overlays appear dynamically: "Premium Quality", "Smart Design", "Daily Essential". Close-up shots highlight details. Product demonstrates its value through action.
-
-CTA [12-15s]: Strong call to action. Final dramatic shot of {product_name_en}. Text overlay: "Shop Now - Limited Time Offer". Urgent feeling. Product name displayed prominently. Link to purchase. Bold, confident ending.
-
-CRITICAL: Include professional English voiceover throughout: "Ready to upgrade your daily routine? This is {product_name_en}. Experience premium quality and smart design that fits perfectly into your life. Don't wait, transform your experience today. Shop now limited time offer." Include matching English subtitles. Cinematic style 9:16 15s duration."""
-
-    return prompt, all_ref_images
+    # 通过版本号偏移，保证多版本选图有差异
+    offset = (version_num - 1) % len(ranked)
+    rotated = ranked[offset:] + ranked[:offset]
+    selected = rotated[:pick_count]
+    for img in selected:
+        image_usage[img] += 1
+    return selected
 
 
-def analyze_versions(info, num_versions=5, temp_raw_dir=None, use_reference_mode=False):
+def select_raw_images(raw_images, version_num):
+    if not raw_images:
+        return []
+    if len(raw_images) <= 3:
+        return list(raw_images)
+    start = (version_num - 1) % len(raw_images)
+    rotated = raw_images[start:] + raw_images[:start]
+    return rotated[:3]
+
+
+def build_shot_style(version_num):
+    styles = [
+        {
+            "name": "Narrative Flow",
+            "plan": [
+                "0-3s: Establish scene context and product entry.",
+                "3-8s: Demonstrate a key interaction with medium and close shots.",
+                "8-12s: Capture macro details and tactile realism.",
+                "12-15s: End with stable product-environment lockup."
+            ],
+        },
+        {
+            "name": "Comparison Flow",
+            "plan": [
+                "0-3s: Show baseline lifestyle context.",
+                "3-8s: Highlight product-enabled improvement in same context.",
+                "8-12s: Focus on design/structure that enables the function.",
+                "12-15s: Present clean hero composition for editing handoff."
+            ],
+        },
+        {
+            "name": "Detail-first Flow",
+            "plan": [
+                "0-3s: Start with close-up material/detail hook.",
+                "3-8s: Pull out to full scene usage.",
+                "8-12s: Alternate detail and interaction inserts for cut points.",
+                "12-15s: End with a minimal, static confirmation shot."
+            ],
+        },
+    ]
+    return styles[(version_num - 1) % len(styles)]
+
+
+def generate_editable_scene_prompt(
+    product_name_en,
+    scene_name,
+    scene_focus,
+    scene_text,
+    primary_feature,
+    secondary_feature,
+    selected_images,
+    selected_raw_images,
+    version_num
+):
+    keyframe_refs = " ".join([f"(@{img})" for img in selected_images])
+    raw_refs = " ".join([f"(@{img})" for img in selected_raw_images]) if selected_raw_images else "N/A"
+    all_refs = " ".join([f"(@{img})" for img in selected_images + selected_raw_images])
+    feature_line = f"{primary_feature}; {secondary_feature}"
+    style = build_shot_style(version_num)
+
+    return f"""{all_refs}
+KEYFRAME REFERENCES (function and scenario priority): {keyframe_refs}
+RAW TEXTURE REFERENCES (material realism priority): {raw_refs}
+
+Create a 15-second vertical (9:16) product footage sequence for {product_name_en}.
+Goal: provide highly editable clips for post-production. No voiceover. No subtitles.
+Allow concise PPT-style on-screen text overlays only.
+
+Scene theme: {scene_name}
+Scene focus: {scene_focus}
+Feature context: {feature_line}
+Version style: {style["name"]}
+
+Shot plan:
+{style["plan"][0]} Overlay text: "{scene_text}".
+{style["plan"][1]} Overlay text: "{primary_feature}".
+{style["plan"][2]} Overlay text: "{secondary_feature}".
+{style["plan"][3]} Overlay text: "{product_name_en}".
+
+Editing requirements:
+- Keep each shot modular and easy to cut.
+- Use clean transitions and stable motion, avoid complex effects.
+- Prioritize realism from RAW references and usage cues from KEYFRAME references.
+- Ensure this version is visually distinct from other versions in scene setting and function emphasis.
+- No narration, no subtitles, no spoken text."""
+
+
+def analyze_versions(info, num_versions=5):
     """
     根据图片特点自动生成多个版本
 
     如果没有具体场景指示，自动选择不同的营销角度
-
-    参数：
-        info: 包含 product_images（keyframes）和 raw_images（实拍图）
-        temp_raw_dir: 临时 raw 文件夹路径（英文文件名）
-        use_reference_mode: 是否使用 Seedance 参考模式
     """
     versions = []
-    product_name = info["product_name"]
     product_name_en = info["product_name_en"]
     images = info["product_images"]
-    raw_images = info["raw_images"]
+    raw_images = info.get("raw_images", [])
 
-    if not images and not raw_images:
+    if not images:
         return versions
 
-    # 不同的营销角度
-    marketing_angles = [
-        {
-            "name": "Premium_Luxury",
-            "feature": "premium craftsmanship and elegant design",
-            "description": "Premium Luxury 15s"
-        },
-        {
-            "name": "Smart_Features",
-            "feature": "innovative smart features",
-            "description": "Smart Features 15s"
-        },
-        {
-            "name": "Lifestyle_Daily",
-            "feature": "seamless daily integration",
-            "description": "Lifestyle Daily 15s"
-        },
-        {
-            "name": "Performance_Quality",
-            "feature": "exceptional performance and reliability",
-            "description": "Performance Quality 15s"
-        },
-        {
-            "name": "Best_Value",
-            "feature": "unbeatable value and benefits",
-            "description": "Best Value 15s"
-        }
-    ]
+    features = info.get("features", [])
+    scenes = info.get("scenes", [])
+    family = guess_product_family(product_name_en, info.get("product_type", ""), features)
+    scene_bank = build_scene_bank(product_name_en, family, features, scenes)
 
-    # 更新 raw_images 为重命名后的英文文件名
-    if temp_raw_dir and os.path.exists(temp_raw_dir):
-        renamed_files = os.listdir(temp_raw_dir)
-        raw_images = [f for f in renamed_files if f.endswith((".jpg", ".png", ".jpeg"))]
-        print(f"📸 Updated raw_images with {len(raw_images)} English filenames")
+    # 多样性跟踪：尽量均匀覆盖功能/场景/图片
+    feature_pool, scene_pool = build_focus_pool(features, scenes)
+    feature_usage = defaultdict(int)
+    scene_usage = defaultdict(int)
+    image_usage = defaultdict(int)
 
-    # 根据版本数生成
-    for i in range(min(num_versions, len(marketing_angles))):
-        angle = marketing_angles[i]
-        prompt, selected_images = generate_hook_body_cta_prompt(
-            product_name_en, angle["feature"], images, raw_images, i + 1, temp_raw_dir, use_reference_mode
+    # 按用户要求数量生成，可循环场景库并在选图上做偏移增强差异
+    for i in range(num_versions):
+        version_num = i + 1
+        scene = scene_bank[i % len(scene_bank)]
+        scene_name, scene_focus_seed, scene_text = scene
+        primary_feature, dynamic_scene_focus = choose_focus(
+            feature_pool, scene_pool, feature_usage, scene_usage, version_num
+        )
+        # 次要功能用于增加版本差异
+        secondary_candidates = [f for f in feature_pool if f.lower() != primary_feature.lower()]
+        if secondary_candidates:
+            secondary_candidates = sorted(
+                secondary_candidates,
+                key=lambda x: (feature_usage[x.lower()], x.lower())
+            )
+            secondary_feature = secondary_candidates[0]
+            feature_usage[secondary_feature.lower()] += 1
+        else:
+            secondary_feature = primary_feature
+
+        scene_focus = f"{scene_focus_seed}; scenario: {dynamic_scene_focus}; feature: {primary_feature}"
+
+        selected_images = select_keyframes_for_scene(
+            images,
+            scene_name,
+            scene_focus,
+            [primary_feature, secondary_feature] + features,
+            version_num,
+            image_usage
+        )
+        selected_raw_images = select_raw_images(raw_images, version_num)
+        prompt = generate_editable_scene_prompt(
+            product_name_en,
+            scene_name,
+            scene_focus,
+            scene_text,
+            primary_feature,
+            secondary_feature,
+            selected_images,
+            selected_raw_images,
+            version_num
         )
 
-        # 构建引用文件列表（只包含纯文件名，不加路径前缀）
-        ref_files = []
-        for img in selected_images:
-            # 只添加纯文件名（不包含 temp_raw/ 或 keyframes/ 路径前缀）
-            ref_files.append(img)
-
         versions.append({
-            "name": angle["description"],
-            "direction": f"V{i+1}_{angle['name']}",
-            "ref_files": ref_files,
-            "prompt": prompt,
-            "modelConfig": {
-                "model": "Seedance 2.0 Fast",
-                "referenceMode": "全能参考",
-                "aspectRatio": "9:16",
-                "duration": "15s"
-            }
+            "name": f"{scene_name} - {primary_feature} Editable 15s",
+            "direction": f"V{i+1}_{scene_name.replace(' ', '_')}",
+            "ref_files": (
+                [f"keyframes/{img}" for img in selected_images] +
+                [f"raw/{img}" for img in selected_raw_images]
+            ),
+            "prompt": prompt
         })
 
     return versions
@@ -312,7 +452,7 @@ def generate_task(version_info, product_name_en, project_dir):
             "description": version_info["name"],
             "modelConfig": {
                 "model": "Seedance 2.0 Fast",
-                "referenceMode": "全能参考",  # 英文：全能参考
+                "referenceMode": "全能参考",
                 "aspectRatio": "9:16",
                 "duration": "15s"
             },
@@ -320,7 +460,15 @@ def generate_task(version_info, product_name_en, project_dir):
             "videoReferences": [],
             "realSubmit": True,
             "priority": 1,
-            "tags": ["PRODUCT", product_name_en.replace(" ", "_"), version_info['name'].replace(" ", "_"), "VOICEOVER", "SUBTITLE"],
+            "tags": [
+                "PRODUCT",
+                product_name_en.replace(" ", "_"),
+                version_info['name'].replace(" ", "_"),
+                "EDITABLE_FOOTAGE",
+                "NO_VOICEOVER",
+                "NO_SUBTITLE",
+                "PPT_TEXT_OVERLAY"
+            ],
             "dependsOn": []
         }]
     }
@@ -331,54 +479,35 @@ def main():
     # 解析参数
     num_versions = 5  # 默认生成 5 个版本
     project_dir = None
-    use_reference_mode = False  # 是否使用参考模式
 
     for arg in sys.argv[1:]:
         if arg.isdigit():
             num_versions = int(arg)
-        elif arg == "--reference-mode":
-            use_reference_mode = True
         elif not arg.startswith("-"):
             project_dir = arg
 
     if not project_dir:
-        print("Usage: python3 generate_tasks.py /path/to/project [num_versions] [--reference-mode]")
-        print("       python3 generate_tasks.py /path/to/project 3        # Generate 3 versions")
-        print("       python3 generate_tasks.py /path/to/project 5 --reference-mode    # Enable reference mode")
+        print("用法: python3 generate_tasks.py /path/to/project [num_versions]")
+        print("       python3 generate_tasks.py /path/to/project 3  # 生成 3 个版本")
         sys.exit(1)
 
-    print(f"📁 Project: {project_dir}")
-    print(f"📊 Versions to generate: {num_versions}")
-    print(f"🔄 Reference mode: {'Enabled' if use_reference_mode else 'Disabled'}")
-
-    # 处理 raw 文件夹（复制并重命名为英文文件名）
-    raw_dir = os.path.join(project_dir, "raw")
-    temp_raw_dir = None
-    if os.path.exists(raw_dir):
-        print(f"\n📸 Processing raw images...")
-        renamed_raw_images, temp_raw_dir = copy_and_rename_raw_images(raw_dir, project_dir)
-        print(f"✅ Created temp_raw/ with {len(renamed_raw_images)} English filenames")
-    else:
-        print("\n⚠️  No raw folder found, using keyframes only")
-        renamed_raw_images = []
+    print(f"📁 项目: {project_dir}")
+    print(f"📊 生成版本数: {num_versions}")
 
     info = parse_zai_report(project_dir)
-    print(f"\n📦 Product: {info['product_name']} ({info['product_name_en']})")
-    print(f"📸 keyframes images: {len(info['product_images'])} files")
-    print(f"📸 raw images: {len(info['raw_images'])} files (before rename)")
+    print(f"📦 产品: {info['product_name']} ({info['product_name_en']})")
+    print(f"📸 可用图片: {len(info['product_images'])} 张")
+    print(f"🧱 RAW 质感参考图: {len(info['raw_images'])} 张")
 
-    # 更新 raw_images 为重命名后的英文文件名
-    info["raw_images"] = renamed_raw_images
-
-    if not info['product_images'] and not info['raw_images']:
-        print("❌ Error: No product images found")
-        print("   Please ensure project directory has keyframes/ or raw/ folder with images")
+    if not info['product_images']:
+        print("❌ 错误: 没有找到产品图片")
+        print("   请确保项目目录下有 keyframes/ 文件夹，且包含图片")
         sys.exit(1)
 
-    versions = analyze_versions(info, num_versions, temp_raw_dir, use_reference_mode)
+    versions = analyze_versions(info, num_versions)
 
     if not versions:
-        print("❌ Error: Unable to generate versions")
+        print("❌ 错误: 无法生成版本")
         sys.exit(1)
 
     for v in versions:
@@ -388,11 +517,11 @@ def main():
             json.dump(task, f, indent=2, ensure_ascii=False)
         print(f"✅ {filename} - {v['name']}")
 
-    print(f"\n✅ Complete! Generated {len(versions)} versions")
-    print(f"📁 Location: {project_dir}")
-    print("\nNext steps:")
-    print("   1. python3 convert_to_base64_fixed.py /path/to/project  # Convert to base64 format")
-    print("   2. python3 submit_tasks.py /path/to/project              # Submit tasks")
+    print(f"\n✅ 完成! 生成了 {len(versions)} 个版本")
+    print(f"📁 位置: {project_dir}")
+    print("\n下一步:")
+    print("   1. python3 scripts/convert_to_base64_fixed.py /path/to/project  # 转换为 base64 格式")
+    print("   2. python3 scripts/submit_tasks.py /path/to/project              # 提交任务")
 
 
 if __name__ == "__main__":

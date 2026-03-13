@@ -1,18 +1,17 @@
 ---
-
 name: produce-product
-description: 产品营销视频制作。根据产品图片，智能设计营销视频版本。适用于电商展示、产品宣传。
-version: 2.5.0
+description: 产品可剪辑素材视频制作。根据产品图片与可选 raw 实拍质感图，生成多版本 Seedance 场景化功能展示任务（英文 Prompt、9:16、15s、无配音无字幕、可含 PPT 式文字说明），将参考图转 base64 并提交到 Mock Gateway。适用于用户要求批量生成后期可剪素材、强调 raw 质感还原与 keyframes 功能场景表达的场景。
+---
 
-# 产品营销视频制作 (produce-product)
+# 产品可剪辑素材视频制作 (produce-product)
 
 ## 概述
 
-根据产品图片，智能分析并生成营销视频任务。支持多版本自动化视频制作。
+根据产品图片智能生成多场景功能展示任务（面向后期剪辑素材），并通过 Seedance Mock Gateway 批量投递。
 
 ### 完整工作流程
 
-```
+```text
 1. 环境准备 → 2. ZAI 图片识别 → 3. 生成任务 → 4. 转换 base64 → 5. 提交任务 → 6. 监控生成
 ```
 
@@ -23,460 +22,177 @@ version: 2.5.0
 ### 1.1 检查 Mock Server
 
 ```bash
-# 检查 Mock Server 是否运行
 curl -s http://localhost:3456/
 ```
 
-应返回：
-```json
-{
-  "name": "Seedance 任务 Mock API",
-  "version": "3.2.0"
-}
-```
+应返回包含：
+- `name: Seedance 任务 Mock API`
 
 ### 1.2 启动 Mock Server
 
 ```bash
-cd /Users/shane/.openclaw/workspace/skills/produce-product/Seedance2-Chrome-Extensions
+cd /Users/shane/.codex/skills/produce-product/Seedance2-Chrome-Extensions
 node mock-server.js &
 ```
 
-### 1.3 启动 Chrome 浏览器（简化版）
-
-推荐使用简化启动脚本，避免 Playwright 超时问题：
+### 1.3 启动 Chrome + 扩展
 
 ```bash
-cd /Users/shane/.openclaw/workspace/skills/produce-product
-bash start-chrome-simple.sh
+cd /Users/shane/.codex/skills/produce-product
+bash scripts/start-chrome.sh &
 ```
-
-脚本会显示手动加载 Seedance 扩展的详细步骤。
-
-**注意**：简化脚本只启动浏览器，不会自动加载扩展。需要手动加载 Seedance 扩展后，扩展才会自动连接到 Mock Server。
 
 ---
 
-### 步骤 2：ZAI 图片识别
+## 步骤 2：ZAI 图片识别
 
-### 2.1 准备产品图片
+### 2.1 项目目录约定
 
-```bash
-# 项目目录结构
-projects/PV-002-戒指_product/
+```text
+/path/to/project/
 ├── products/
-│   ├── *.jpg                  # 产品图片
-│   └── ZAI_full_analysis_report.md  # ZAI 识别报告（自动生成）
-└── keyframes/                 # 参考图（后续自动创建）
+│   ├── *.jpg|*.jpeg|*.png
+│   └── ZAI_full_analysis_report.md   # 可选
+├── keyframes/                        # 必需
+└── raw/                              # 可选：实拍质感参考图（材质/触感/表面）
 ```
 
-**重要：**
-- 将产品图片放入 `products/` 目录
-- 支持格式：.jpg, .jpeg, .png
+### 2.2 识别要求
 
-### 2.2 使用 ZAI 识别产品
+- 先识别产品信息并写入 `products/ZAI_full_analysis_report.md`。
+- 若无报告，脚本会用默认信息继续，但优先使用报告。
 
-**方法 A：通过 MCP Server**
-
-如果已配置 ZAI MCP Server，可以使用：
-
-```bash
-# 调用 ZAI 识别
-mcp call zai-mcp-server__analyze_image --image /path/to/project/products/image.jpg
-```
-
-**方法 B：通过 OpenClaw 工具**
-
-使用 `image` 工具分析产品图片：
-
-```python
-from openclaw import image
-
-# 分析第一张图片
-result = image.analyze(
-    image="/path/to/project/products/image1.jpg",
-    prompt="分析这个产品，识别产品名称、类型、颜色、功能等"
-)
-
-# 生成识别报告
-with open("/path/to/project/products/ZAI_full_analysis_report.md", "w") as f:
-    f.write(result)
-```
-
-**方法 C：通过对话**
-
-发送产品图片到对话，并要求识别：
-
-```
-请识别这个产品，生成以下格式的分析报告：
-
-## 产品基本信息
-
-- 产品名称: [中文]
-- 产品类型: [中文]
-- 可选颜色: [列表]
-- 核心功能: [列表]
-
-## 图片分类汇总
-
-| 文件 | 类型 | 颜色 | 场景/用途 |
-|------|------|------|-----------|
-```
-
-然后将识别结果保存到 `products/ZAI_full_analysis_report.md`。
-
-### 2.3 ZAI 报告格式示例
-
-识别完成后，`ZAI_full_analysis_report.md` 应包含：
-
-```markdown
-# JELLY BELLES 智能戒指 - ZAI 图片识别报告
-
-## 产品基本信息
-
-- **产品名称**: JELLY BELLES 智能戒指
-- **产品类型**: 智能穿戴设备 - 智能戒指
-- **可选颜色**: 金色、黑色、银色 (3种配色)
-- **可选尺寸**: 8、9、10、11、12 (5种尺寸)
-- **电池续航**: 5-7天
-
-## 图片分类汇总
-
-| 文件 | 类型 | 颜色 | 场景/用途 |
-|------|------|------|-----------|
-| ring-01_part_01.jpg | 产品照片 | 黑/金 | 手部佩戴展示 |
-| ring-01_part_03.jpg | 产品照片 | 金/银/黑 | 三色产品静物 |
-| ring-01_part_15.jpg | 产品照片 | 金色 | 睡眠监测佩戴 |
-```
+建议识别输出至少包含：
+- 产品名称
+- 产品类型
+- 核心功能
+- 图片用途概览
 
 ---
 
 ## 步骤 3：生成任务 JSON
 
-### 3.1 生成任务
+### 3.1 生成命令
 
 ```bash
-cd /Users/shane/.openclaw/workspace/skills/produce-product
-
-# 生成 5 个版本（默认）
-python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product
-
-# 生成 3 个版本
-python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product 3
+cd /Users/shane/.codex/skills/produce-product
+python3 scripts/generate_tasks.py /path/to/project 10
 ```
 
-### 3.2 自动生成的内容
+- 第二个参数是版本数，按用户要求传入。
+- 输出文件：`seedance_tasks_V*.json`。
 
-脚本会自动：
-1. 解析 ZAI 报告（如果存在）
-2. 翻译产品名称为英文
-3. 选择不同的营销角度：
-   - **V1_Premium_Luxury** - 奢华品质
-   - **V2_Smart_Features** - 智能功能
-   - **V3_Lifestyle_Daily** - 日常生活
-   - **V4_Performance_Quality** - 性能质量
-   - **V5_Best_Value** - 最佳价值
+### 3.2 生成规则
 
-4. 每个版本按照 **Hook-Body-CTA 结构**生成 15s prompt：
-   - **Hook (0-3s)**: 吸引注意力
-   - **Body (3-12s)**: 展示功能和优势
-   - **CTA (12-15s)**: 行动号召
+- Prompt 必须英文。
+- 不使用 Hook-Body-CTA。
+- 不要配音，不要字幕。
+- 允许简洁的 PPT 式英文画面文字（overlay text）。
+- 多版本时按识别结果和图片信息智能选图，输出不同场景下的功能展示。
+- 多版本时优先覆盖识别结果中的不同功能侧面与场景侧面，避免版本内容同质化。
+- `modelConfig` 固定为：
+  - `aspectRatio: 9:16`
+  - `duration: 15s`
 
-5. 包含英文口播和字幕
+### 3.3 参考图职责规则（保留并增强）
 
-### 3.3 生成的文件
-
-```
-seedance_tasks_V1_Premium_Luxury.json
-seedance_tasks_V2_Smart_Features.json
-seedance_tasks_V3_Lifestyle_Daily.json
-seedance_tasks_V4_Performance_Quality.json
-seedance_tasks_V5_Best_Value.json
-```
+- `raw/` 为空：不引用 raw 图片，保持原流程。
+- `raw/` 非空：每个版本引用最多 3 张 raw 图片作为质感锚点。
+- `keyframes/`：用于功能与场景表达（构图、动作、使用上下文）。
+- `raw/`：用于材质与触感还原（表面、纹理、光泽、细节）。
+- Prompt 中必须：
+  - 引用 keyframes 与 raw 图片（`(@xxx.jpg)`）
+  - 明确区分 keyframes 与 raw 的用途优先级
 
 ---
 
-## 步骤 4：转换为 base64 格式
+## 步骤 4：转换为 base64
 
 ```bash
-cd /Users/shane/.openclaw/workspace/skills/produce-product
-python3 convert_to_base64_fixed.py
+cd /Users/shane/.codex/skills/produce-product
+python3 scripts/convert_to_base64_fixed.py /path/to/project
 ```
 
-这会将所有任务 JSON 中的 `referenceFiles` 从文件路径转换为 base64 编码格式。
+要求：
+- 提交前 `referenceFiles` 必须是 base64 对象，不能是路径字符串。
 
 ---
 
 ## 步骤 5：提交任务到 Mock Server
 
 ```bash
-cd /Users/shane/.openclaw/workspace/skills/produce-product
-python3 submit_tasks.py
+cd /Users/shane/.codex/skills/produce-product
+python3 scripts/submit_tasks.py /path/to/project
 ```
 
-这会自动：
-- 读取所有 `seedance_tasks_*.json` 文件
-- 提交到 Mock Server API (`/api/tasks/push`)
-- 显示提交结果
+要求：
+- 提交 payload 必须保留 `modelConfig`。
+- 若丢失 `modelConfig`，扩展会回退默认值（`16:9 / 5s`）。
 
 ---
 
 ## 步骤 6：监控生成状态
 
 ```bash
-# 查看所有任务
 curl -s http://localhost:3456/api/tasks | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-print(f'Total: {d[\"total\"]}')
-for task in d['tasks'][-5:]:
-    print(f\"  {task['taskCode']}: {task['status']}\")
+import sys, json
+d = json.load(sys.stdin)
+print('Total:', d.get('total', 0))
+for t in d.get('tasks', [])[-10:]:
+    print(t.get('taskCode'), t.get('status'))
 "
 ```
 
-任务状态：
-- `pending` - 等待处理
-- `acked` - 已被扩展接收
-- `configuring` - 配置中
-- `generating` - 生成中
-- `completed` - 已完成
-- `failed` - 失败
+常见状态：
+- `pending`
+- `acked`
+- `configuring`
+- `generating`
+- `completed`
+- `failed`
 
 ---
 
 ## 核心脚本
 
-| 脚本 | 功能 |
-|------|------|
-| `start-chrome.sh` | 一键启动 Chrome + Seedance 扩展 |
-| `scripts/generate_tasks.py` | 智能生成多版本任务 JSON（Hook-Body-CTA 结构）|
-| `convert_to_base64_fixed.py` | 转换 referenceFiles 为 base64 |
-| `submit_tasks.py` | 批量提交任务到 Mock Server |
+- `scripts/generate_tasks.py`：生成多版本场景化任务（智能选图 + raw 质感引用逻辑）
+- `scripts/convert_to_base64_fixed.py`：转换 `referenceFiles` 为 base64
+- `scripts/submit_tasks.py`：批量提交任务到 `/api/tasks/push`
+- `scripts/start-chrome.sh`：启动浏览器与扩展
 
 ---
 
-## ⚠️ 重要规则（教训总结）
+## 重要规则
 
-### 1. Prompt 必须是英文
-- ❌ 不能出现任何中文（包括产品名）
-- ✅ 所有中文产品名需转换为英文
-- ✅ 口播脚本和字幕必须是英文
-
-### 2. Reference Mode 保持中文
-- ✅ `"referenceMode": "全能参考"` 可以是中文
-
-### 3. 严格按照用户指令生成版本数
-- 用户说生成几个就生成几个
-- 不自动生成更多版本
-
-### 4. 提交前确认用户意图
-- 用户说提交几个就提交几个
-- 不自动提交所有版本
-
-### 5. Reference Files 必须是 base64 对象
-- ❌ 不能是文件路径（如 `"keyframes/image.jpg"`）
-- ✅ 必须是 base64 编码的对象：
-  ```json
-  {
-    "fileName": "image.jpg",
-    "base64": "/9j/4AAQSkZJRgABAQ..."
-  }
-  ```
-
-### 6. 图片文件必须存在
-- 确保 `keyframes/` 目录中包含所有引用的图片
-- 使用 `ls keyframes/` 检查可用图片
-
-### 7. Prompt 结构：Hook-Body-CTA
-- **Hook (0-3s)**: 吸引注意力，戏剧性开场
-- **Body (3-12s)**: 展示功能和优势，真实使用场景
-- **CTA (12-15s)**: 行动号召，强烈购买暗示
-- ✅ 每个版本 15 秒
-- ✅ 包含英文口播和字幕
-
-### 8. ZAI 识别是必需步骤
-- ✅ 在生成任务前必须先进行 ZAI 图片识别
-- ✅ 识别报告用于翻译产品名、选择营销角度
-- ✅ 如果没有 ZAI 报告，会使用默认信息
-
-### 9. Raw 图片质感还原要求
-- ✅ Raw 文件夹中的实拍图片会自动复制并重命名为英文（如 `raw_photo_001.jpg`）
-- ✅ Prompt 中会添加 **CRITICAL QUALITY REQUIREMENT** 要求还原 raw 图片的质感
-- ✅ Keyframes 图片只作为构图参考，不强调质感还原
-- ✅ 质感还原要求包括：表面纹理、材质质量、光线反射、色彩准确性等
-
-### 10. Seedance 2.0 使用手册
-- 📚 手册链接：https://bytedance.larkoffice.com/wiki/A5RHwWhoBiOnjukIIw6cu5ybnXQ
-- 📖 包含完整的功能说明、参数预览、使用方式等
-- ✅ 建议使用 Seedance 2.0 模型获得更流畅的体验
-
----
-
-## 完整示例
-
-### 示例：JELLY BELLES Smart Ring - 5 个版本视频
-
-```bash
-# 1. 环境准备
-cd /Users/shane/.openclaw/workspace/skills/produce-product
-bash start-chrome.sh &
-
-# 2. ZAI 图片识别
-# 通过对话发送产品图片，要求识别
-# 识别结果保存到 products/ZAI_full_analysis_report.md
-
-# 3. 生成任务 JSON（5 个版本）
-python3 scripts/generate_tasks.py /Users/shane/Downloads/Micro-Drama-Skills-main/projects/PV-002-戒指_product
-
-# 4. 转换为 base64
-python3 convert_to_base64_fixed.py
-
-# 5. 提交任务
-python3 submit_tasks.py
-
-# 6. 监控状态
-curl -s http://localhost:3456/api/tasks | jq '.tasks[-5:]'
-```
-
-**自动生成的 5 个营销角度：**
-
-1. **V1_Premium_Luxury** - 奢华品质（15 秒）
-2. **V2_Smart_Features** - 智能功能（15 秒）
-3. **V3_Lifestyle_Daily** - 日常生活（15 秒）
-4. **V4_Performance_Quality** - 性能质量（15 秒）
-5. **V5_Best_Value** - 最佳价值（15 秒）
-
-**每个视频都包含：**
-- ✅ Hook-Body-CTA 结构
-- ✅ 英文口播
-- ✅ 英文字幕
-- ✅ 9:16 竖屏格式
-- ✅ 15 秒时长
-
----
-
-## 营销角度说明
-
-脚本会自动选择以下营销角度：
-
-| 版本 | 营销角度 | 重点 |
-|------|---------|------|
-| V1 | Premium Luxury | 高端品质、优雅设计 |
-| V2 | Smart Features | 智能功能、创新技术 |
-| V3 | Lifestyle Daily | 日常生活、无缝集成 |
-| V4 | Performance Quality | 性能表现、可靠性 |
-| V5 | Best Value | 性价比、超值优惠 |
-
-如果用户有具体场景指示，脚本会根据指示生成。如果没有指示，默认使用以上角度。
-
----
-
-## 管理页面
-
-- **Mock Server 管理页**：http://localhost:3456/admin
-- **即梦网站**：https://jimeng.jianying.com/ai-tool/image/generate
+1. 按用户要求生成与提交指定数量版本，不自动增减。
+2. 未经用户明确要求，不删除项目中的任务文件。
+3. 发现参数异常（比如 5s、16:9）时，先修脚本再重跑，不手改大量 JSON。
+4. 核心目标是产出高可剪辑素材：镜头模块化、场景差异化、便于后期拼接。
+5. 当用户要求多个版本时，必须尽量提高版本多样性（功能重点、场景表达、选图组合、镜头风格）。
 
 ---
 
 ## 故障排查
 
-### 问题 1：Mock Server 无法连接
+### 1) 网关不可用
 
 ```bash
-# 检查 Mock Server 是否运行
-curl http://localhost:3456/
-
-# 重新启动
-cd /Users/shane/.openclaw/workspace/skills/produce-product/Seedance2-Chrome-Extensions
-node mock-server.js &
+curl -s http://localhost:3456/
 ```
 
-### 问题 2：Chrome 扩展未连接
+无响应就重启 `mock-server.js`。
 
-```bash
-# 检查 SSE 连接数
-curl -s http://localhost:3456/ | jq '.sseClients'
+### 2) 一直 `pending`
 
-# 重启 Chrome
-bash start-chrome.sh &
-```
+- 检查 `GET /` 里的 `sseClients` 是否大于 0。
+- 若为 0，说明扩展未连接，重启 `scripts/start-chrome.sh` 并确认扩展在线。
 
-### 问题 3：任务一直 pending
+### 3) 结果变成 `16:9 / 5s`
 
-```bash
-# 检查任务状态
-curl http://localhost:3456/api/tasks | jq '.tasks[-1]'
+- 检查 `scripts/submit_tasks.py` 是否把 `modelConfig` 一并提交。
+- 检查任务 JSON 是否为 `9:16 / 15s`。
 
-# 检查 SSE 客户端
-curl http://localhost:3456/ | jq '.sseClients'
-```
+### 4) 引用图缺失
 
-### 问题 4：图片文件不存在
-
-```bash
-# 检查 keyframes 目录
-ls /path/to/project/keyframes/
-
-# 如果不存在，脚本会自动从 products/ 复制
-# 确保产品图片在 products/ 目录
-```
-
-### 问题 5：生成的版本不符合预期
-
-```bash
-# 重新生成指定数量的版本
-python3 scripts/generate_tasks.py /path/to/project 3  # 生成 3 个版本
-```
-
-### 问题 6：ZAI 报告未生成
-
-```bash
-# 检查 products/ 目录
-ls /path/to/project/products/
-
-# 确保 ZAI 识别结果已保存
-cat /path/to/project/products/ZAI_full_analysis_report.md
-```
-
-
-
----
-
-## 更新日志
-
-### v2.5.0
-- **修复**：修正 duration 配置格式
-  - 将 `duration` 从 "15s" 改为 15（纯数字）
-  - 即梦网站期望纯数字格式
-  - 确保视频时长正确显示为 15 秒
-
-### v2.4.0
-- **修复**：添加 ZAI 图片识别步骤
-  - 在"环境准备"和"生成任务"之间插入"ZAI 图片识别"
-  - 完整工作流程：6 步
-  - 添加 ZAI 识别方法和示例
-  - 添加 ZAI 报告格式说明
-
-### v2.3.0
-- **重大更新**：移除场景脚本依赖
-  - 简化工作流程：直接根据产品图片生成任务
-  - 自动按照 Hook-Body-CTA 结构生成 15s prompt
-  - 自动选择 5 个不同营销角度
-  - 删除场景相关脚本（generate_ring_scenarios.py）
-  - 更新文档，移除场景脚本说明
-
-### v2.2.0
-- 添加完整工作流程说明
-- 新增场景脚本模板（已废弃）
-
-### v2.1.1
-- 添加重要规则说明（教训总结）
-
-### v2.1.0
-- 修复 prompt 中文问题
-- 添加 seedance_submit.py
-- 更新 SKILL.md
-
----
-
-
+- 检查 `keyframes/`、`raw/` 文件是否存在。
+- 重新执行 `scripts/convert_to_base64_fixed.py /path/to/project`。

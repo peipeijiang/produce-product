@@ -1,0 +1,4 @@
+interface:
+  display_name: "Produce Product Videos"
+  short_description: "Generate editable product footage tasks"
+  default_prompt: "Generate multiple 15s 9:16 product footage task variants for post-production editing from keyframes and optional raw references, prioritize diversity across scenes and feature angles from image analysis, avoid voiceover and subtitles, allow concise PPT-style text overlays, convert references to base64, and submit tasks to the Seedance mock gateway."

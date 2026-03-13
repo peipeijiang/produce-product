@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-转换指定项目的任务 JSON 中的 referenceFiles 为 base64 格式
+将参考图片转换为 base64 格式并更新 JSON 任务文件
 """
 import json
 import os
 import base64
-import glob
 import sys
 
 def image_to_base64(image_path):
@@ -29,6 +28,8 @@ def update_task_json(json_file_path, project_dir):
                     # 获取图片完整路径
                     if file_name.startswith("keyframes/"):
                         image_path = os.path.join(project_dir, file_name)
+                    elif file_name.startswith("raw/"):
+                        image_path = os.path.join(project_dir, file_name)
                     else:
                         image_path = os.path.join(project_dir, "keyframes", file_name)
 
@@ -47,6 +48,8 @@ def update_task_json(json_file_path, project_dir):
             else:
                 # 如果是字符串，尝试作为相对路径处理
                 if ref_file.startswith("keyframes/"):
+                    image_path = os.path.join(project_dir, ref_file)
+                elif ref_file.startswith("raw/"):
                     image_path = os.path.join(project_dir, ref_file)
                 else:
                     image_path = os.path.join(project_dir, "keyframes", ref_file)
@@ -74,31 +77,27 @@ def update_task_json(json_file_path, project_dir):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 convert_project_to_base64.py /path/to/project")
+        print("用法: python3 scripts/convert_to_base64_fixed.py /path/to/project")
         sys.exit(1)
 
     project_dir = sys.argv[1]
+    if not os.path.isdir(project_dir):
+        print(f"❌ 错误: 项目目录不存在: {project_dir}")
+        sys.exit(1)
 
-    # 只处理新格式的 V 文件（V1_Premium, V2_Smart 等）
-    new_format_patterns = [
-        "V1_Premium_Luxury",
-        "V2_Smart_Features",
-        "V3_Lifestyle_Daily",
-        "V4_Performance_Quality",
-        "V5_Best_Value"
-    ]
+    # 获取所有 seedance_tasks_*.json 文件
+    updated_count = 0
+    for filename in os.listdir(project_dir):
+        if filename.startswith("seedance_tasks_") and filename.endswith(".json"):
+            json_path = os.path.join(project_dir, filename)
+            update_task_json(json_path, project_dir)
+            updated_count += 1
 
-    # 获取所有 seedance_tasks_V*.json 文件
-    for json_file in sorted(glob.glob(os.path.join(project_dir, "seedance_tasks_V*.json"))):
-        filename = os.path.basename(json_file)
+    if updated_count == 0:
+        print("\n⚠️ 未找到 seedance_tasks_*.json 文件")
+        sys.exit(1)
 
-        # 只处理新格式的文件
-        if not any(pattern in filename for pattern in new_format_patterns):
-            continue
-
-        update_task_json(json_file, project_dir)
-
-    print(f"\n✅ All task files updated with base64 images")
+    print(f"\n✅ 已更新 {updated_count} 个任务文件（referenceFiles -> base64）")
 
 if __name__ == "__main__":
     main()
