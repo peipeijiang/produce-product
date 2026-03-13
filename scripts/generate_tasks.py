@@ -6,8 +6,8 @@
 - 不使用 Hook-Body-CTA
 - 不要配音，不要字幕
 - 可包含类似 PPT 的英文文字说明（overlay text）
-- keyframes: 功能与场景参考
-- raw: 材质与质感参考
+- keyframes: 仅提供功能和场景 idea
+- raw: 视觉质感与材质还原主参考
 
 使用方法：
     python3 scripts/generate_tasks.py /path/to/project [num_versions]
@@ -168,40 +168,40 @@ def guess_product_family(product_name_en, product_type, features):
 
 
 def build_scene_bank(product_name_en, family, features, scenes):
-    feature_text = ", ".join(features[:4]) if features else "core product benefits"
-    custom_scene = scenes[0] if scenes else "Everyday use"
+    custom_scene = scenes[0] if scenes else "Daily use"
 
+    # 所有版本统一为生活化 TikTok 带货主播日常使用展示风格
     if family == "wearable":
         return [
-            ("Morning Routine", "quick setup and glanceable metrics", "Fast setup, clear status"),
-            ("Workout Tracking", "active movement and live feedback", "Track movement in real time"),
-            ("Desk Focus", "distraction-free passive monitoring", "Stay focused, stay informed"),
-            ("Night Recovery", "sleep and recovery insights", "Recover better overnight"),
-            ("Close-up Materials", "premium finish and tactile details", "Premium materials, refined finish"),
+            ("Morning GRWM", "creator starts the day and quickly checks status", "Real morning routine"),
+            ("Gym Check-in", "creator records active workout moments", "Workout day tracking"),
+            ("Coffee Break Desk", "creator uses product while working and replying messages", "Busy day companion"),
+            ("Commute Vlog", "creator captures walking, subway, and street moments", "On-the-go daily use"),
+            ("Night Wind-down", "creator wraps up and reviews recovery insights", "End-of-day routine"),
         ]
     if family == "pet":
         return [
-            ("Living Room Comfort", "pet relaxing naturally at home", "Comfort for everyday rest"),
-            ("Nap Time Detail", "supportive shape and soft contact points", "Supportive and soft"),
-            ("Owner Interaction", "human-pet interaction in normal routine", "Fits real home routines"),
-            ("Material Close-up", "surface texture and stitching details", "Quality you can see"),
-            ("Multi-angle Utility", "different placement and use moments", "Practical in every corner"),
+            ("Morning Pet Routine", "creator films feeding and chill moments at home", "Real home pet life"),
+            ("Living Room Chill", "casual couch and floor moments with the pet", "Daily comfort moments"),
+            ("Balcony Sunlight", "natural light and relaxed interaction", "Natural daylight use"),
+            ("Quick Clean-up", "creator tidies and resets product area", "Practical daily maintenance"),
+            ("Night Pet Calm", "quiet bedtime pet routine and settling down", "Calm night routine"),
         ]
     if family == "audio":
         return [
-            ("Commute Scene", "portable daily audio usage", "Ready for daily commute"),
-            ("Work Session", "focus audio in desk scenario", "Focused sound, clean setup"),
-            ("Workout Scene", "stable fit during movement", "Stable fit in motion"),
-            ("Call Scenario", "clear communication moment", "Clear calls, less noise"),
-            ("Material Close-up", "driver housing and finishing details", "Precision build quality"),
+            ("Morning Commute POV", "creator records subway and walking audio moments", "Daily commute vibe"),
+            ("Study Desk Session", "creator does focused work and task switching", "Focus block session"),
+            ("Gym Movement Clip", "creator shows fit stability while moving", "Move freely all day"),
+            ("Street Call Moment", "creator takes real-life phone calls outdoors", "Clear call moments"),
+            ("Evening Unwind", "creator relaxes with music at home", "Evening chill routine"),
         ]
 
     return [
-        ("Hero Overview", f"{feature_text}", "Core value at a glance"),
-        ("Scene 1", f"{custom_scene}", "Designed for real-world use"),
-        ("Scene 2", "functional interaction with the product", "Function shown in context"),
-        ("Detail Macro", "material and structure close-up", "Details define quality"),
-        ("Lifestyle Wrap", "integration into daily routine", "Fits into everyday life"),
+        ("Morning Routine", "creator starts daily tasks and uses product naturally", "Daily creator routine"),
+        ("Errands & Commute", "creator moves through normal city moments", "Real on-the-go usage"),
+        ("Desk & Messages", "creator alternates between work and social check-ins", "Work-life flow"),
+        ("Home Reset", f"{custom_scene}", "Practical at-home usage"),
+        ("Night Wrap-up", "creator ends the day with low-key usage moments", "Nightly lifestyle scene"),
     ]
 
 
@@ -279,30 +279,30 @@ def select_raw_images(raw_images, version_num):
 def build_shot_style(version_num):
     styles = [
         {
-            "name": "Narrative Flow",
+            "name": "TikTok Daily Vlog",
             "plan": [
-                "0-3s: Establish scene context and product entry.",
-                "3-8s: Demonstrate a key interaction with medium and close shots.",
-                "8-12s: Capture macro details and tactile realism.",
-                "12-15s: End with stable product-environment lockup."
+                "0-3s: Creator opens with natural handheld daily-life moment.",
+                "3-8s: Show quick functional interaction during real routine.",
+                "8-12s: Insert tactile detail shots while keeping lifestyle continuity.",
+                "12-15s: End with casual creator-facing or over-shoulder usage shot."
             ],
         },
         {
-            "name": "Comparison Flow",
+            "name": "TikTok UGC Review",
             "plan": [
-                "0-3s: Show baseline lifestyle context.",
-                "3-8s: Highlight product-enabled improvement in same context.",
-                "8-12s: Focus on design/structure that enables the function.",
-                "12-15s: Present clean hero composition for editing handoff."
+                "0-3s: Start from a common daily pain point moment.",
+                "3-8s: Show creator using product as quick practical solution.",
+                "8-12s: Blend interaction shots and close-up detail evidence.",
+                "12-15s: Finish with daily-life confirmation moment, not studio hero."
             ],
         },
         {
-            "name": "Detail-first Flow",
+            "name": "TikTok Day-in-Life",
             "plan": [
-                "0-3s: Start with close-up material/detail hook.",
-                "3-8s: Pull out to full scene usage.",
-                "8-12s: Alternate detail and interaction inserts for cut points.",
-                "12-15s: End with a minimal, static confirmation shot."
+                "0-3s: Open from in-the-moment day-in-life context.",
+                "3-8s: Follow creator through one continuous usage sequence.",
+                "8-12s: Add cutaway details without breaking realism.",
+                "12-15s: Close with authentic routine continuation shot."
             ],
         },
     ]
@@ -333,6 +333,7 @@ RAW TEXTURE REFERENCES (material realism priority): {raw_refs}
 Create a 15-second vertical (9:16) product footage sequence for {product_name_en}.
 Goal: provide highly editable clips for post-production. No voiceover. No subtitles.
 Allow concise PPT-style on-screen text overlays only.
+Visual direction: TikTok livestream / creator UGC style, fully lifestyle and daily-use driven.
 
 Scene theme: {scene_name}
 Scene focus: {scene_focus}
@@ -347,8 +348,10 @@ Shot plan:
 
 Editing requirements:
 - Keep each shot modular and easy to cut.
-- Use clean transitions and stable motion, avoid complex effects.
-- Prioritize realism from RAW references and usage cues from KEYFRAME references.
+- Keep visual language natural and creator-like, avoid polished studio ad look.
+- Use handheld or lightly stabilized motion consistent with TikTok daily vlogs.
+- Prioritize material realism from RAW references as the final visual truth source.
+- Use KEYFRAME references and analysis outputs only for function ideas and scene ideas.
 - Ensure this version is visually distinct from other versions in scene setting and function emphasis.
 - No narration, no subtitles, no spoken text."""
 
@@ -465,6 +468,7 @@ def generate_task(version_info, product_name_en, project_dir):
                 product_name_en.replace(" ", "_"),
                 version_info['name'].replace(" ", "_"),
                 "EDITABLE_FOOTAGE",
+                "TIKTOK_LIFESTYLE",
                 "NO_VOICEOVER",
                 "NO_SUBTITLE",
                 "PPT_TEXT_OVERLAY"
