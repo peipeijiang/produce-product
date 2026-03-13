@@ -63,7 +63,12 @@ def parse_zai_report(project_dir):
             continue
 
         if "产品名称" in line and ":" in line:
-            result["product_name"] = line.split(":")[-1].strip()
+            name_raw = line.split(":")[-1].strip()
+            result["product_name"] = name_raw
+            # 优先提取括号中的英文名：智能戒指 (Smart Ring)
+            en_match = re.search(r"\(([^)]+)\)", name_raw)
+            if en_match and not contains_chinese(en_match.group(1)):
+                result["product_name_en"] = en_match.group(1).strip()
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
 
@@ -84,7 +89,9 @@ def parse_zai_report(project_dir):
     }
 
     product_name = result["product_name"]
-    result["product_name_en"] = cn_to_en.get(product_name, product_name)
+    if result["product_name_en"] == "Product":
+        result["product_name_en"] = cn_to_en.get(product_name, product_name)
+    result["product_name_en"] = force_english_text(result["product_name_en"], "Product")
 
     # 如果报告信息不足，则从图片文件名补充关键词
     if not result["features"] and not result["scenes"]:
@@ -142,6 +149,55 @@ def sanitize_keywords(items):
             continue
         output.append(text)
     return unique_preserve(output)
+
+
+def contains_chinese(text):
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def force_english_text(text, fallback):
+    text = (text or "").strip()
+    if not text:
+        return fallback
+    if not contains_chinese(text):
+        return text
+    # 移除中文，仅保留英文/数字与常见符号
+    cleaned = re.sub(r"[\u4e00-\u9fff]", "", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_:;,.")
+    return cleaned if cleaned else fallback
+
+
+def to_english_terms(items, kind):
+    """把关键词转成英文，避免 prompt 正文出现中文。"""
+    mapping = {
+        "睡眠监测": "sleep tracking",
+        "心率趋势": "heart-rate trend",
+        "运动记录": "activity logging",
+        "压力评分": "stress score",
+        "恢复建议": "recovery guidance",
+        "通勤": "commute",
+        "办公": "desk work",
+        "办公专注": "focus work",
+        "健身": "workout",
+        "跑步训练": "running training",
+        "夜间恢复": "night recovery",
+        "社交日常": "social daily life",
+        "日常使用": "daily use",
+    }
+    out = []
+    for idx, raw in enumerate(items, 1):
+        token = (raw or "").strip()
+        if not token:
+            continue
+        if token in mapping:
+            out.append(mapping[token])
+            continue
+        if contains_chinese(token):
+            # 未命中的中文词，统一给英文占位，保证 prompt 纯英文
+            out.append(f"{kind} angle {idx}")
+            continue
+        out.append(token)
+    return unique_preserve(out)
 
 
 def unique_preserve(items):
@@ -208,6 +264,8 @@ def build_scene_bank(product_name_en, family, features, scenes):
 def build_focus_pool(features, scenes):
     feature_pool = sanitize_keywords(features) or ["core function"]
     scene_pool = sanitize_keywords(scenes) or ["everyday use"]
+    feature_pool = to_english_terms(feature_pool, "feature")
+    scene_pool = to_english_terms(scene_pool, "scene")
     return feature_pool, scene_pool
 
 
