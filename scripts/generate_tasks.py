@@ -72,6 +72,10 @@ def parse_zai_report(project_dir):
         if "产品类型" in line and ":" in line:
             result["product_type"] = line.split(":")[-1].strip()
 
+        # 仅用于功能/场景抽取时过滤噪声行（文件表格、图片名行等）
+        if is_report_noise_line(line):
+            continue
+
         # 尽量从报告里抽取功能和场景关键词
         if any(k in line for k in ["核心功能", "功能", "卖点", "特性", "亮点"]):
             result["features"].extend(extract_keywords(line))
@@ -147,6 +151,8 @@ def sanitize_keywords(items):
             continue
         if text in banned:
             continue
+        if is_noise_keyword(text):
+            continue
         output.append(text)
     return unique_preserve(output)
 
@@ -167,37 +173,73 @@ def force_english_text(text, fallback):
     return cleaned if cleaned else fallback
 
 
-def to_english_terms(items, kind):
-    """把关键词转成英文，避免 prompt 正文出现中文。"""
-    mapping = {
-        "睡眠监测": "sleep tracking",
-        "心率趋势": "heart-rate trend",
-        "运动记录": "activity logging",
-        "压力评分": "stress score",
-        "恢复建议": "recovery guidance",
-        "通勤": "commute",
-        "办公": "desk work",
-        "办公专注": "focus work",
-        "健身": "workout",
-        "跑步训练": "running training",
-        "夜间恢复": "night recovery",
-        "社交日常": "social daily life",
-        "日常使用": "daily use",
-    }
+def to_english_terms(items):
+    """
+    提取英文信号词（仅作为 idea 输入），不做中文字符匹配翻译。
+    overlay 文案由后续模板自主生成。
+    """
     out = []
-    for idx, raw in enumerate(items, 1):
+    for raw in items:
         token = (raw or "").strip()
         if not token:
             continue
-        if token in mapping:
-            out.append(mapping[token])
+        if is_noise_keyword(token):
             continue
+        # 中文词跳过，不做词对词映射
         if contains_chinese(token):
-            # 未命中的中文词，统一给英文占位，保证 prompt 纯英文
-            out.append(f"{kind} angle {idx}")
+            continue
+        # 仅保留可读英文短语
+        token = re.sub(r"[^a-zA-Z0-9\s\-]", " ", token)
+        token = re.sub(r"\s+", " ", token).strip().lower()
+        if len(token) < 3:
             continue
         out.append(token)
     return unique_preserve(out)
+
+
+def is_noise_keyword(text):
+    t = (text or "").strip().lower()
+    if not t:
+        return True
+    if re.fullmatch(r"\d+", t):
+        return True
+    if t in {"jpg", "jpeg", "png", "part"}:
+        return True
+    if re.fullmatch(r"\d+\.\d+", t):
+        return True
+    if ".jpg" in t or ".jpeg" in t or ".png" in t:
+        return True
+    if t.startswith("feature angle") or t.startswith("scene angle"):
+        return True
+    if t in {"file", "name", "content", "type", "url", "http", "https"}:
+        return True
+    if re.fullmatch(r"[a-z]{1,2}\d+", t):
+        return True
+    if re.fullmatch(r"[a-z]+\d+[a-z0-9]*", t):
+        return True
+    if re.fullmatch(r"[a-z]{1,3}", t) and len(t) <= 2:
+        return True
+    # 文件名碎片类 token
+    if re.search(r"\bpart\b", t) and re.search(r"\d+", t):
+        return True
+    return False
+
+
+def is_report_noise_line(line):
+    l = line.strip().lower()
+    if not l:
+        return True
+    # markdown 表格与分隔行
+    if "|" in l:
+        return True
+    if set(l) <= {"-", ":", " "}:
+        return True
+    # 图片文件行或资源链接行
+    if ".jpg" in l or ".jpeg" in l or ".png" in l:
+        return True
+    if l.startswith("http://") or l.startswith("https://"):
+        return True
+    return False
 
 
 def unique_preserve(items):
@@ -261,11 +303,38 @@ def build_scene_bank(product_name_en, family, features, scenes):
     ]
 
 
-def build_focus_pool(features, scenes):
-    feature_pool = sanitize_keywords(features) or ["core function"]
-    scene_pool = sanitize_keywords(scenes) or ["everyday use"]
-    feature_pool = to_english_terms(feature_pool, "feature")
-    scene_pool = to_english_terms(scene_pool, "scene")
+def build_default_focus_pool(family):
+    if family == "wearable":
+        return (
+            ["health monitoring", "sleep insights", "activity tracking", "gesture control", "battery life"],
+            ["morning routine", "commute", "desk workflow", "workout session", "night routine"]
+        )
+    if family == "pet":
+        return (
+            ["daily comfort", "easy clean-up", "pet relaxation", "home-friendly design", "material durability"],
+            ["morning feeding", "living room chill", "balcony sunlight", "afternoon nap", "night calm"]
+        )
+    if family == "audio":
+        return (
+            ["stable fit", "clear calls", "focus listening", "portable use", "battery endurance"],
+            ["commute", "desk session", "workout", "street call", "evening unwind"]
+        )
+    return (
+        ["daily utility", "comfort use", "practical function", "durable design", "easy routine fit"],
+        ["morning routine", "on-the-go use", "desk workflow", "home reset", "night wrap-up"]
+    )
+
+
+def build_focus_pool(features, scenes, family):
+    feature_pool = sanitize_keywords(features)
+    scene_pool = sanitize_keywords(scenes)
+    feature_pool = to_english_terms(feature_pool)
+    scene_pool = to_english_terms(scene_pool)
+    default_features, default_scenes = build_default_focus_pool(family)
+    if not feature_pool:
+        feature_pool = default_features
+    if not scene_pool:
+        scene_pool = default_scenes
     return feature_pool, scene_pool
 
 
@@ -367,8 +436,39 @@ def build_shot_style(version_num):
     return styles[(version_num - 1) % len(styles)]
 
 
+def to_overlay_phrase(feature_text, family, slot):
+    text = (feature_text or "").lower()
+    if "sleep" in text:
+        return "Sleep insights every night"
+    if "heart" in text or "oxygen" in text:
+        return "Health stats at a glance"
+    if "activity" in text or "sport" in text or "workout" in text:
+        return "Track every move"
+    if "gesture" in text or "control" in text or "remote" in text:
+        return "Hands-free control"
+    if "battery" in text or "endurance" in text:
+        return "Power that lasts"
+    if "water" in text or "durable" in text:
+        return "Ready for daily conditions"
+    if "comfort" in text:
+        return "Comfort for all-day use"
+    if "call" in text:
+        return "Clear calls in real life"
+
+    # 无明确特征时的通用自主文案
+    generic = {
+        "wearable": ["Smart habits, made simple", "Designed for daily rhythm"],
+        "pet": ["Fits naturally into home life", "Comfort your pet can feel"],
+        "audio": ["Sound that fits your routine", "Built for everyday listening"],
+        "generic": ["Built for real daily moments", "Simple value in daily life"],
+    }
+    pool = generic.get(family, generic["generic"])
+    return pool[slot % len(pool)]
+
+
 def generate_editable_scene_prompt(
     product_name_en,
+    family,
     scene_name,
     scene_focus,
     scene_text,
@@ -383,6 +483,8 @@ def generate_editable_scene_prompt(
     all_refs = " ".join([f"(@{img})" for img in selected_images + selected_raw_images])
     feature_line = f"{primary_feature}; {secondary_feature}"
     style = build_shot_style(version_num)
+    overlay_feature_1 = to_overlay_phrase(primary_feature, family, 0)
+    overlay_feature_2 = to_overlay_phrase(secondary_feature, family, 1)
 
     return f"""{all_refs}
 KEYFRAME REFERENCES (function and scenario priority): {keyframe_refs}
@@ -400,8 +502,8 @@ Version style: {style["name"]}
 
 Shot plan:
 {style["plan"][0]} Overlay text: "{scene_text}".
-{style["plan"][1]} Overlay text: "{primary_feature}".
-{style["plan"][2]} Overlay text: "{secondary_feature}".
+{style["plan"][1]} Overlay text: "{overlay_feature_1}".
+{style["plan"][2]} Overlay text: "{overlay_feature_2}".
 {style["plan"][3]} Overlay text: "{product_name_en}".
 
 Editing requirements:
@@ -434,7 +536,7 @@ def analyze_versions(info, num_versions=5):
     scene_bank = build_scene_bank(product_name_en, family, features, scenes)
 
     # 多样性跟踪：尽量均匀覆盖功能/场景/图片
-    feature_pool, scene_pool = build_focus_pool(features, scenes)
+    feature_pool, scene_pool = build_focus_pool(features, scenes, family)
     feature_usage = defaultdict(int)
     scene_usage = defaultdict(int)
     image_usage = defaultdict(int)
@@ -472,6 +574,7 @@ def analyze_versions(info, num_versions=5):
         selected_raw_images = select_raw_images(raw_images, version_num)
         prompt = generate_editable_scene_prompt(
             product_name_en,
+            family,
             scene_name,
             scene_focus,
             scene_text,
