@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build
+playwright/user-data/
+playwright/screenshots/
+uploads/
+data/
+*.log
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+Seedance2-Chrome-Extensions/.history/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# OpenClaw
+.clawhub/
+.openclaw/

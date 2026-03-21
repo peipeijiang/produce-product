@@ -1,0 +1,4 @@
+interface:
+  display_name: "Produce Product"
+  short_description: "Generate editable TikTok-style product video tasks"
+  default_prompt: "Use $produce-product to analyze product images, generate multiple 15s 9:16 TikTok-style editable product video tasks with no on-screen text, convert references to base64, and submit them to the Seedance mock gateway."
